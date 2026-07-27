@@ -248,13 +248,19 @@ def _setup_ai_features() -> None:
     console.print("Supported providers: [bold]Gemini[/bold] (recommended, free tier), OpenAI, local (Ollama/llama.cpp)")
     provider = Prompt.ask(
         "Provider",
-        choices=["gemini", "openai", "local"],
-        default="gemini",
+        choices=["gemini", "openai", "deepseek", "local"],
+        default="deepseek",
     )
 
     env_lines = ["# ApplyPilot configuration", ""]
 
-    if provider == "gemini":
+    if provider == "deepseek":
+        api_key = Prompt.ask("DeepSeek API key", default=os.environ.get("LLM_API_KEY", ""))
+        model = Prompt.ask("Model name", default="deepseek-chat")
+        env_lines.append("LLM_URL=https://api.deepseek.com")
+        env_lines.append(f"LLM_MODEL={model}")
+        env_lines.append(f"LLM_API_KEY={api_key}")
+    elif provider == "gemini":
         api_key = Prompt.ask("Gemini API key (from aistudio.google.com)")
         model = Prompt.ask("Model", default="gemini-2.0-flash")
         env_lines.append(f"GEMINI_API_KEY={api_key}")
@@ -267,8 +273,11 @@ def _setup_ai_features() -> None:
     elif provider == "local":
         url = Prompt.ask("Local LLM endpoint URL", default="http://localhost:8080/v1")
         model = Prompt.ask("Model name", default="local-model")
+        api_key = Prompt.ask("API Key (optional)", default="")
         env_lines.append(f"LLM_URL={url}")
         env_lines.append(f"LLM_MODEL={model}")
+        if api_key:
+            env_lines.append(f"LLM_API_KEY={api_key}")
 
     env_lines.append("")
     ENV_PATH.write_text("\n".join(env_lines), encoding="utf-8")
