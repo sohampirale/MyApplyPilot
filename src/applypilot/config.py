@@ -210,14 +210,19 @@ def get_tier() -> int:
     if not has_llm:
         return 1
 
-    has_claude = shutil.which("claude") is not None
+    has_browser_use = False
+    try:
+        import browser_use  # noqa: F401
+        has_browser_use = True
+    except ImportError:
+        pass
     try:
         get_chrome_path()
         has_chrome = True
     except FileNotFoundError:
         has_chrome = False
 
-    if has_claude and has_chrome:
+    if has_browser_use and has_chrome:
         return 3
 
     return 2
@@ -241,8 +246,10 @@ def check_tier(required: int, feature: str) -> None:
     if required >= 2 and not any(os.environ.get(k) for k in ("GEMINI_API_KEY", "OPENAI_API_KEY", "LLM_URL")):
         missing.append("LLM API key — run [bold]applypilot init[/bold] or set GEMINI_API_KEY")
     if required >= 3:
-        if not shutil.which("claude"):
-            missing.append("Claude Code CLI — install from [bold]https://claude.ai/code[/bold]")
+        try:
+            import browser_use  # noqa: F401
+        except ImportError:
+            missing.append("browser-use — run [bold]pip install browser-use langchain-openai[/bold]")
         try:
             get_chrome_path()
         except FileNotFoundError:

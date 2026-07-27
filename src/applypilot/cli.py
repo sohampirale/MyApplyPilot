@@ -147,7 +147,7 @@ def apply(
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max applications to submit."),
     workers: int = typer.Option(1, "--workers", "-w", help="Number of parallel browser workers."),
     min_score: int = typer.Option(7, "--min-score", help="Minimum fit score for job selection."),
-    model: str = typer.Option("haiku", "--model", "-m", help="Claude model name."),
+    model: str = typer.Option("deepseek-chat", "--model", "-m", help="LLM model name (from .env config)."),
     continuous: bool = typer.Option(False, "--continuous", "-c", help="Run forever, polling for new jobs."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting."),
     headless: bool = typer.Option(False, "--headless", help="Run browsers in headless mode."),
@@ -186,7 +186,7 @@ def apply(
 
     # --- Full apply mode ---
 
-    # Check 1: Tier 3 required (Claude Code CLI + Chrome)
+    # Check 1: Tier 3 required (browser-use + Chrome)
     check_tier(3, "auto-apply")
 
     # Check 2: Profile exists
@@ -222,12 +222,7 @@ def apply(
             raise typer.Exit(code=1)
         mcp_path = _profile_path.parent / ".mcp-apply-0.json"
         console.print(f"[green]Wrote prompt to:[/green] {prompt_file}")
-        console.print(f"\n[bold]Run manually:[/bold]")
-        console.print(
-            f"  claude --model {model} -p "
-            f"--mcp-config {mcp_path} "
-            f"--permission-mode bypassPermissions < {prompt_file}"
-        )
+        console.print(f"\n[bold]Prompt saved for manual review.[/bold]")
         return
 
     from applypilot.apply.launcher import main as apply_main
@@ -396,13 +391,21 @@ def doctor() -> None:
                         "Set GEMINI_API_KEY in ~/.applypilot/.env (run 'applypilot init')"))
 
     # --- Tier 3 checks ---
-    # Claude Code CLI
-    claude_bin = shutil.which("claude")
-    if claude_bin:
-        results.append(("Claude Code CLI", ok_mark, claude_bin))
-    else:
-        results.append(("Claude Code CLI", fail_mark,
-                        "Install from https://claude.ai/code (needed for auto-apply)"))
+    # browser-use package
+    try:
+        import browser_use  # noqa: F401
+        results.append(("browser-use", ok_mark, "Browser automation agent available"))
+    except ImportError:
+        results.append(("browser-use", fail_mark,
+                        "pip install browser-use langchain-openai (needed for auto-apply)"))
+
+    # langchain-openai package
+    try:
+        import langchain_openai  # noqa: F401
+        results.append(("langchain-openai", ok_mark, "LLM integration for browser agent"))
+    except ImportError:
+        results.append(("langchain-openai", fail_mark,
+                        "pip install langchain-openai (needed for auto-apply)"))
 
     # Chrome
     try:
@@ -411,14 +414,6 @@ def doctor() -> None:
     except FileNotFoundError:
         results.append(("Chrome/Chromium", fail_mark,
                         "Install Chrome or set CHROME_PATH env var (needed for auto-apply)"))
-
-    # Node.js / npx (for Playwright MCP)
-    npx_bin = shutil.which("npx")
-    if npx_bin:
-        results.append(("Node.js (npx)", ok_mark, npx_bin))
-    else:
-        results.append(("Node.js (npx)", fail_mark,
-                        "Install Node.js 18+ from nodejs.org (needed for auto-apply)"))
 
     # CapSolver (optional)
     capsolver = os.environ.get("CAPSOLVER_API_KEY")
@@ -446,9 +441,9 @@ def doctor() -> None:
 
     if tier == 1:
         console.print("[dim]  → Tier 2 unlocks: scoring, tailoring, cover letters (needs LLM API key)[/dim]")
-        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs Claude Code CLI + Chrome + Node.js)[/dim]")
+        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs browser-use + Chrome)[/dim]")
     elif tier == 2:
-        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs Claude Code CLI + Chrome + Node.js)[/dim]")
+        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs browser-use + Chrome)[/dim]")
 
     console.print()
 

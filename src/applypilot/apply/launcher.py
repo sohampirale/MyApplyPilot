@@ -1,7 +1,7 @@
-"""Apply orchestration: acquire jobs, spawn Claude Code sessions, track results.
+"""Apply orchestration: acquire jobs, run browser-use agents, track results.
 
 This is the main entry point for the apply pipeline. It pulls jobs from
-the database, launches Chrome + Claude Code for each one, parses the
+the database, launches Chrome + browser-use agent for each one, parses the
 result, and updates the database. Supports parallel workers via --workers.
 """
 
@@ -49,9 +49,8 @@ POLL_INTERVAL = config.DEFAULTS["poll_interval"]
 # Thread-safe shutdown coordination
 _stop_event = threading.Event()
 
-# Track active Claude Code processes for skip (Ctrl+C) handling
-_claude_procs: dict[int, subprocess.Popen] = {}
-_claude_lock = threading.Lock()
+# Track active browser-use agents for skip (Ctrl+C) handling
+from applypilot.apply.agent import run_agent_sync, cancel_agent, cancel_all_agents
 
 # Register cleanup on exit
 atexit.register(cleanup_on_exit)
@@ -60,27 +59,11 @@ if platform.system() != "Windows":
 
 
 # ---------------------------------------------------------------------------
-# MCP config
+# Agent config
 # ---------------------------------------------------------------------------
 
-def _make_mcp_config(cdp_port: int) -> dict:
-    """Build MCP config dict for a specific CDP port."""
-    return {
-        "mcpServers": {
-            "playwright": {
-                "command": "npx",
-                "args": [
-                    "@playwright/mcp@latest",
-                    f"--cdp-endpoint=http://localhost:{cdp_port}",
-                    f"--viewport-size={config.DEFAULTS['viewport']}",
-                ],
-            },
-            "gmail": {
-                "command": "npx",
-                "args": ["-y", "@gongrzhe/server-gmail-autoauth-mcp"],
-            },
-        }
-    }
+# Max steps for the browser-use agent per job application
+_AGENT_MAX_STEPS = 100
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +195,7 @@ def release_lock(url: str) -> None:
 
 def gen_prompt(target_url: str, min_score: int = 7,
                model: str = "sonnet", worker_id: int = 0) -> Path | None:
-    """Generate a prompt file and print the Claude CLI command for manual debugging.
+    """Generate a prompt file for manual debugging.
 
     Returns:
         Path to the generated prompt file, or None if no job found.
@@ -238,11 +221,6 @@ def gen_prompt(target_url: str, min_score: int = 7,
     site_slug = (job.get("site") or "unknown")[:20].replace(" ", "_")
     prompt_file = config.LOG_DIR / f"prompt_{site_slug}_{job['title'][:30].replace(' ', '_')}.txt"
     prompt_file.write_text(prompt, encoding="utf-8")
-
-    # Write MCP config for reference
-    port = BASE_CDP_PORT + worker_id
-    mcp_path = config.APP_DIR / f".mcp-apply-{worker_id}.json"
-    mcp_path.write_text(json.dumps(_make_mcp_config(port)), encoding="utf-8")
 
     return prompt_file
 
@@ -296,7 +274,7 @@ def reset_failed() -> int:
 
 def run_job(job: dict, port: int, worker_id: int = 0,
             model: str = "sonnet", dry_run: bool = False) -> tuple[str, int]:
-    """Spawn a Claude Code session for one job application.
+    """Run a browser-use agent for one job application.
 
     Returns:
         Tuple of (status_string, duration_ms). Status is one of:
@@ -317,41 +295,11 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         dry_run=dry_run,
     )
 
-    # Write per-worker MCP config
-    mcp_config_path = config.APP_DIR / f".mcp-apply-{worker_id}.json"
-    mcp_config_path.write_text(json.dumps(_make_mcp_config(port)), encoding="utf-8")
-
-    # Build claude command
-    cmd = [
-        "claude",
-        "--model", model,
-        "-p",
-        "--mcp-config", str(mcp_config_path),
-        "--permission-mode", "bypassPermissions",
-        "--no-session-persistence",
-        "--disallowedTools", (
-            "mcp__gmail__draft_email,mcp__gmail__modify_email,"
-            "mcp__gmail__delete_email,mcp__gmail__download_attachment,"
-            "mcp__gmail__batch_modify_emails,mcp__gmail__batch_delete_emails,"
-            "mcp__gmail__create_label,mcp__gmail__update_label,"
-            "mcp__gmail__delete_label,mcp__gmail__get_or_create_label,"
-            "mcp__gmail__list_email_labels,mcp__gmail__create_filter,"
-            "mcp__gmail__list_filters,mcp__gmail__get_filter,"
-            "mcp__gmail__delete_filter"
-        ),
-        "--output-format", "stream-json",
-        "--verbose", "-",
-    ]
-
-    env = os.environ.copy()
-    env.pop("CLAUDECODE", None)
-    env.pop("CLAUDE_CODE_ENTRYPOINT", None)
-
     worker_dir = reset_worker_dir(worker_id)
 
     update_state(worker_id, status="applying", job_title=job["title"],
                  company=job.get("site", ""), score=job.get("fit_score", 0),
-                 start_time=time.time(), actions=0, last_action="starting")
+                 start_time=time.time(), actions=0, last_action="starting agent")
     add_event(f"[W{worker_id}] Starting: {job['title'][:40]} @ {job.get('site', '')}")
 
     worker_log = config.LOG_DIR / f"worker-{worker_id}.log"
@@ -365,106 +313,47 @@ def run_job(job: dict, port: int, worker_id: int = 0,
     )
 
     start = time.time()
-    stats: dict = {}
-    proc = None
 
     try:
-        proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            env=env,
-            cwd=str(worker_dir),
+        # Action callback for real-time dashboard updates
+        def _on_action(action_desc: str) -> None:
+            ws = get_state(worker_id)
+            cur_actions = ws.actions if ws else 0
+            update_state(worker_id,
+                         actions=cur_actions + 1,
+                         last_action=action_desc[:35])
+
+        # Run the browser-use agent synchronously
+        output, action_count = run_agent_sync(
+            task_prompt=agent_prompt,
+            cdp_port=port,
+            worker_id=worker_id,
+            max_steps=_AGENT_MAX_STEPS,
+            on_action=_on_action,
         )
-        with _claude_lock:
-            _claude_procs[worker_id] = proc
 
-        proc.stdin.write(agent_prompt)
-        proc.stdin.close()
-
-        text_parts: list[str] = []
-        with open(worker_log, "a", encoding="utf-8") as lf:
-            lf.write(log_header)
-
-            for line in proc.stdout:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    msg = json.loads(line)
-                    msg_type = msg.get("type")
-                    if msg_type == "assistant":
-                        for block in msg.get("message", {}).get("content", []):
-                            bt = block.get("type")
-                            if bt == "text":
-                                text_parts.append(block["text"])
-                                lf.write(block["text"] + "\n")
-                            elif bt == "tool_use":
-                                name = (
-                                    block.get("name", "")
-                                    .replace("mcp__playwright__", "")
-                                    .replace("mcp__gmail__", "gmail:")
-                                )
-                                inp = block.get("input", {})
-                                if "url" in inp:
-                                    desc = f"{name} {inp['url'][:60]}"
-                                elif "ref" in inp:
-                                    desc = f"{name} {inp.get('element', inp.get('text', ''))}"[:50]
-                                elif "fields" in inp:
-                                    desc = f"{name} ({len(inp['fields'])} fields)"
-                                elif "paths" in inp:
-                                    desc = f"{name} upload"
-                                else:
-                                    desc = name
-
-                                lf.write(f"  >> {desc}\n")
-                                ws = get_state(worker_id)
-                                cur_actions = ws.actions if ws else 0
-                                update_state(worker_id,
-                                             actions=cur_actions + 1,
-                                             last_action=desc[:35])
-                    elif msg_type == "result":
-                        stats = {
-                            "input_tokens": msg.get("usage", {}).get("input_tokens", 0),
-                            "output_tokens": msg.get("usage", {}).get("output_tokens", 0),
-                            "cache_read": msg.get("usage", {}).get("cache_read_input_tokens", 0),
-                            "cache_create": msg.get("usage", {}).get("cache_creation_input_tokens", 0),
-                            "cost_usd": msg.get("total_cost_usd", 0),
-                            "turns": msg.get("num_turns", 0),
-                        }
-                        text_parts.append(msg.get("result", ""))
-                except json.JSONDecodeError:
-                    text_parts.append(line)
-                    lf.write(line + "\n")
-
-        proc.wait(timeout=300)
-        returncode = proc.returncode
-        proc = None
-
-        if returncode and returncode < 0:
-            return "skipped", int((time.time() - start) * 1000)
-
-        output = "\n".join(text_parts)
         elapsed = int(time.time() - start)
         duration_ms = int((time.time() - start) * 1000)
 
+        # Save full transcript to log file
+        config.ensure_dirs()
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        job_log = config.LOG_DIR / f"claude_{ts}_w{worker_id}_{job.get('site', 'unknown')[:20]}.txt"
-        job_log.write_text(output, encoding="utf-8")
+        job_log = config.LOG_DIR / f"agent_{ts}_w{worker_id}_{job.get('site', 'unknown')[:20]}.txt"
+        try:
+            with open(worker_log, "a", encoding="utf-8") as lf:
+                lf.write(log_header)
+                lf.write(output)
+                lf.write(f"\n--- {action_count} actions in {elapsed}s ---\n")
+            job_log.write_text(output, encoding="utf-8")
+        except Exception:
+            pass
 
-        if stats:
-            cost = stats.get("cost_usd", 0)
-            ws = get_state(worker_id)
-            prev_cost = ws.total_cost if ws else 0.0
-            update_state(worker_id, total_cost=prev_cost + cost)
+        update_state(worker_id, actions=action_count)
 
         def _clean_reason(s: str) -> str:
             return re.sub(r'[*`"]+$', '', s).strip()
 
+        # Parse result status from agent output
         for result_status in ["APPLIED", "EXPIRED", "CAPTCHA", "LOGIN_ISSUE"]:
             if f"RESULT:{result_status}" in output:
                 add_event(f"[W{worker_id}] {result_status} ({elapsed}s): {job['title'][:30]}")
@@ -497,22 +386,11 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         update_state(worker_id, status="failed", last_action=f"no result ({elapsed}s)")
         return "failed:no_result_line", duration_ms
 
-    except subprocess.TimeoutExpired:
-        duration_ms = int((time.time() - start) * 1000)
-        elapsed = int(time.time() - start)
-        add_event(f"[W{worker_id}] TIMEOUT ({elapsed}s)")
-        update_state(worker_id, status="failed", last_action=f"TIMEOUT ({elapsed}s)")
-        return "failed:timeout", duration_ms
     except Exception as e:
         duration_ms = int((time.time() - start) * 1000)
         add_event(f"[W{worker_id}] ERROR: {str(e)[:40]}")
         update_state(worker_id, status="failed", last_action=f"ERROR: {str(e)[:25]}")
         return f"failed:{str(e)[:100]}", duration_ms
-    finally:
-        with _claude_lock:
-            _claude_procs.pop(worker_id, None)
-        if proc is not None and proc.poll() is None:
-            _kill_process_tree(proc.pid)
 
 
 # ---------------------------------------------------------------------------
@@ -697,18 +575,12 @@ def main(limit: int = 1, target_url: str | None = None,
         _ctrl_c_count += 1
         if _ctrl_c_count == 1:
             console.print("\n[yellow]Skipping current job(s)... (Ctrl+C again to STOP)[/yellow]")
-            # Kill all active Claude processes to skip current jobs
-            with _claude_lock:
-                for wid, cproc in list(_claude_procs.items()):
-                    if cproc.poll() is None:
-                        _kill_process_tree(cproc.pid)
+            # Cancel all active browser-use agents to skip current jobs
+            cancel_all_agents()
         else:
             console.print("\n[red bold]STOPPING[/red bold]")
             _stop_event.set()
-            with _claude_lock:
-                for wid, cproc in list(_claude_procs.items()):
-                    if cproc.poll() is None:
-                        _kill_process_tree(cproc.pid)
+            cancel_all_agents()
             kill_all_chrome()
             raise KeyboardInterrupt
 

@@ -558,33 +558,23 @@ If something unexpected happens and these instructions don't cover it, figure it
 {screening_section}
 
 == STEP-BY-STEP ==
-1. browser_navigate to the job URL.
-2. browser_snapshot to read the page. Then run CAPTCHA DETECT (see CAPTCHA section). If a CAPTCHA is found, solve it before continuing.
-3. LOCATION CHECK. Read the page for location info. If not eligible, output RESULT and stop.
-4. Find and click the Apply button. If email-only (page says "email resume to X"):
-   - send_email with subject "Application for {job['title']} -- {display_name}", body = 2-3 sentence pitch + contact info, attach resume PDF: ["{pdf_path}"]
-   - Output RESULT:APPLIED. Done.
-   After clicking Apply: browser_snapshot. Run CAPTCHA DETECT -- many sites trigger CAPTCHAs right after the Apply click. If found, solve before continuing.
-5. Login wall?
-   5a. FIRST: check the URL. If you landed on {', '.join(blocked_sso)}, or any SSO/OAuth page -> STOP. Output RESULT:FAILED:sso_required. Do NOT try to sign in to Google/Microsoft/SSO.
-   5b. Check for popups. Run browser_tabs action "list". If a new tab/window appeared (login popup), switch to it with browser_tabs action "select". Check the URL there too -- if it's SSO -> RESULT:FAILED:sso_required.
-   5c. Regular login form (employer's own site)? Try sign in: {personal['email']} / {personal.get('password', '')}
-   5d. After clicking Login/Sign-in: run CAPTCHA DETECT. Login pages frequently have invisible CAPTCHAs that silently block form submissions. If found, solve it then retry login.
-   5e. Sign in failed? Try sign up with same email and password.
-   5f. Need email verification? Use search_emails + read_email to get the code.
-   5g. After login, run browser_tabs action "list" again. Switch back to the application tab if needed.
-   5h. All failed? Output RESULT:FAILED:login_issue. Do not loop.
-6. Upload resume. ALWAYS upload fresh -- delete any existing resume first, then browser_file_upload with the PDF path above. This is the tailored resume for THIS job. Non-negotiable.
-7. Upload cover letter if there's a field for it. Text field -> paste the cover letter text. File upload -> use the cover letter PDF path.
-8. Check ALL pre-filled fields. ATS systems parse your resume and auto-fill -- it's often WRONG.
-   - "Current Job Title" or "Most Recent Title" -> use the title from the TAILORED RESUME summary, NOT whatever the parser guessed.
-   - Compare every other field to the APPLICANT PROFILE. Fix mismatches. Fill empty fields.
-9. Answer screening questions using the rules above.
-10. {submit_instruction}
-11. After submit: browser_snapshot. Run CAPTCHA DETECT -- submit buttons often trigger invisible CAPTCHAs. If found, solve it (the form will auto-submit once the token clears, or you may need to click Submit again). Then check for new tabs (browser_tabs action: "list"). Switch to newest, close old. Snapshot to confirm submission. Look for "thank you" or "application received".
-12. Output your result.
+1. Navigate to the job URL.
+2. Examine the page layout. Check for location info. If not eligible, call done("RESULT:FAILED:not_eligible_location") and stop.
+3. Find and click the Apply button.
+4. Login wall?
+   4a. FIRST: check the URL. If you landed on {', '.join(blocked_sso)}, or any SSO/OAuth page -> STOP. Call done("RESULT:FAILED:sso_required"). Do NOT try to sign in to Google/Microsoft/SSO.
+   4b. Regular login form (employer's own site)? Try sign in: {personal['email']} / {personal.get('password', '')}
+   4c. Sign in failed? Try sign up with same email and password.
+   4d. All failed? Call done("RESULT:FAILED:login_issue"). Do not loop.
+5. Upload resume. ALWAYS upload fresh using upload_file with the PDF path above: {pdf_path}. This is the tailored resume for THIS job. Non-negotiable.
+6. Upload cover letter if there's a field for it. Text field -> paste cover letter text. File field -> upload cover letter PDF path: {cl_upload_path or "N/A"}.
+7. Check ALL pre-filled fields. ATS systems parse your resume and auto-fill -- fix any errors against APPLICANT PROFILE and TAILORED RESUME.
+8. Answer screening questions using the rules above.
+9. {submit_instruction}
+10. After submitting, confirm submission ("thank you", "application received").
+11. Call done() with your result code.
 
-== RESULT CODES (output EXACTLY one) ==
+== RESULT CODES (include in done() action) ==
 RESULT:APPLIED -- submitted successfully
 RESULT:EXPIRED -- job closed or no longer accepting applications
 RESULT:CAPTCHA -- blocked by unsolvable captcha
@@ -593,32 +583,18 @@ RESULT:FAILED:not_eligible_location -- onsite outside acceptable area, no remote
 RESULT:FAILED:not_eligible_work_auth -- requires unauthorized work location
 RESULT:FAILED:reason -- any other failure (brief reason)
 
-== BROWSER EFFICIENCY ==
-- browser_snapshot ONCE per page to understand it. Then use browser_take_screenshot to check results (10x less memory).
-- Only snapshot again when you need element refs to click/fill.
-- Multi-page forms (Workday, Taleo, iCIMS): snapshot each new page, fill all fields, click Next/Continue. Repeat until final review page.
-- Fill ALL fields in ONE browser_fill_form call. Not one at a time.
-- Keep your thinking SHORT. Don't repeat page structure back.
-- CAPTCHA AWARENESS: After any navigation, Apply/Submit/Login click, or when a page feels stuck -- run CAPTCHA DETECT (see CAPTCHA section). Invisible CAPTCHAs (Turnstile, reCAPTCHA v3) show NO visual widget but block form submissions silently. The detect script finds them even when invisible.
-
 == FORM TRICKS ==
-- Popup/new window opened? browser_tabs action "list" to see all tabs. browser_tabs action "select" with the tab index to switch. ALWAYS check for new tabs after clicking login/apply/sign-in buttons.
-- "Upload your resume" pre-fill page (Workday, Lever, etc.): This is NOT the application form yet. Click "Select file" or the upload area, then browser_file_upload with the resume PDF path. Wait for parsing to finish. Then click Next/Continue to reach the actual form.
-- File upload not working? Try: (1) browser_click the upload button/area, (2) browser_file_upload with the path. If still failing, look for a hidden file input or a "Select file" link and click that first.
-- Dropdown won't fill? browser_click to open it, then browser_click the option.
-- Checkbox won't check via fill_form? Use browser_click on it instead. Snapshot to verify.
-- Phone field with country prefix: just type digits {phone_digits}
+- Multi-page forms (Workday, Taleo, iCIMS): fill all fields on each page, then click Next/Continue. Repeat until final review page.
+- "Upload your resume" pre-fill page (Workday, Lever, etc.): Click "Select file" or upload area, use upload_file with resume PDF path. Wait for parsing to finish. Then click Next/Continue to reach the actual form.
+- Dropdown won't fill? Click to open it, then click the matching option.
+- Phone field with country prefix: type digits {phone_digits}
 - Date fields: {datetime.now().strftime('%m/%d/%Y')}
-- Validation errors after submit? Take BOTH snapshot AND screenshot. Snapshot shows text errors, screenshot shows red-highlighted fields. Fix all, retry.
-- Honeypot fields (hidden, "leave blank"): skip them.
 - Format-sensitive fields: read the placeholder text, match it exactly.
 
-{captcha_section}
-
 == WHEN TO GIVE UP ==
-- Same page after 3 attempts with no progress -> RESULT:FAILED:stuck
-- Job is closed/expired/page says "no longer accepting" -> RESULT:EXPIRED
-- Page is broken/500 error/blank -> RESULT:FAILED:page_error
-Stop immediately. Output your RESULT code. Do not loop."""
+- Same page after 3 attempts with no progress -> call done("RESULT:FAILED:stuck")
+- Job is closed/expired/page says "no longer accepting" -> call done("RESULT:EXPIRED")
+- Page is broken/500 error/blank -> call done("RESULT:FAILED:page_error")
+Stop immediately. Output your RESULT code in done(). Do not loop."""
 
     return prompt
