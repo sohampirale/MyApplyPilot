@@ -311,7 +311,9 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
         if not url:
             emp = employers.get(job.get("employer_key", ""), {})
             if emp and job.get("external_path"):
-                url = f"{emp['base_url']}/{emp['site_id']}{job['external_path']}"
+                url = f"{emp['base_url']}/en-US/{emp['site_id']}{job['external_path']}"
+        if url and "myworkdayjobs.com" in url and "/en-US/" not in url:
+            url = url.replace("myworkdayjobs.com/", "myworkdayjobs.com/en-US/")
         if not url:
             continue
 
