@@ -219,13 +219,17 @@ def _build_captcha_section() -> str:
 
     Reads the CapSolver API key from environment. The CAPTCHA section
     contains no personal data -- it's the same for every user.
+
+    FIX C5: Uses str.format() instead of f-string so that JavaScript
+    curly braces { } are literal (not escaped as {{ }}).
     """
     config.load_env()
     capsolver_key = os.environ.get("CAPSOLVER_API_KEY", "")
+    key_display = capsolver_key or "NOT CONFIGURED — skip to MANUAL FALLBACK for all CAPTCHAs"
 
-    return f"""== CAPTCHA ==
+    return """== CAPTCHA ==
 You solve CAPTCHAs via the CapSolver REST API. No browser extension. You control the entire flow.
-API key: {capsolver_key or 'NOT CONFIGURED — skip to MANUAL FALLBACK for all CAPTCHAs'}
+API key: __KEY_DISPLAY__
 API base: https://api.capsolver.com
 
 CRITICAL RULE: When ANY CAPTCHA appears (hCaptcha, reCAPTCHA, Turnstile -- regardless of what it looks like visually), you MUST:
@@ -238,59 +242,59 @@ Do NOT skip the API call based on what the CAPTCHA looks like. CapSolver solves 
 Run this browser_evaluate after every navigation, Apply/Submit/Login click, or when a page feels stuck.
 IMPORTANT: Detection order matters. hCaptcha elements also have data-sitekey, so check hCaptcha BEFORE reCAPTCHA.
 
-browser_evaluate function: () => {{{{
-  const r = {{}};
+browser_evaluate function: () => {
+  const r = {};
   const url = window.location.href;
   // 1. hCaptcha (check FIRST -- hCaptcha uses data-sitekey too)
   const hc = document.querySelector('.h-captcha, [data-hcaptcha-sitekey]');
-  if (hc) {{{{
+  if (hc) {
     r.type = 'hcaptcha'; r.sitekey = hc.dataset.sitekey || hc.dataset.hcaptchaSitekey;
-  }}}}
-  if (!r.type && document.querySelector('script[src*="hcaptcha.com"], iframe[src*="hcaptcha.com"]')) {{{{
+  }
+  if (!r.type && document.querySelector('script[src*="hcaptcha.com"], iframe[src*="hcaptcha.com"]')) {
     const el = document.querySelector('[data-sitekey]');
-    if (el) {{{{ r.type = 'hcaptcha'; r.sitekey = el.dataset.sitekey; }}}}
-  }}}}
+    if (el) { r.type = 'hcaptcha'; r.sitekey = el.dataset.sitekey; }
+  }
   // 2. Cloudflare Turnstile
-  if (!r.type) {{{{
+  if (!r.type) {
     const cf = document.querySelector('.cf-turnstile, [data-turnstile-sitekey]');
-    if (cf) {{{{
+    if (cf) {
       r.type = 'turnstile'; r.sitekey = cf.dataset.sitekey || cf.dataset.turnstileSitekey;
       if (cf.dataset.action) r.action = cf.dataset.action;
       if (cf.dataset.cdata) r.cdata = cf.dataset.cdata;
-    }}}}
-  }}}}
-  if (!r.type && document.querySelector('script[src*="challenges.cloudflare.com"]')) {{{{
+    }
+  }
+  if (!r.type && document.querySelector('script[src*="challenges.cloudflare.com"]')) {
     r.type = 'turnstile_script_only'; r.note = 'Wait 3s and re-detect.';
-  }}}}
+  }
   // 3. reCAPTCHA v3 (invisible, loaded via render= param)
-  if (!r.type) {{{{
+  if (!r.type) {
     const s = document.querySelector('script[src*="recaptcha"][src*="render="]');
-    if (s) {{{{
+    if (s) {
       const m = s.src.match(/render=([^&]+)/);
-      if (m && m[1] !== 'explicit') {{{{ r.type = 'recaptchav3'; r.sitekey = m[1]; }}}}
-    }}}}
-  }}}}
+      if (m && m[1] !== 'explicit') { r.type = 'recaptchav3'; r.sitekey = m[1]; }
+    }
+  }
   // 4. reCAPTCHA v2 (checkbox or invisible)
-  if (!r.type) {{{{
+  if (!r.type) {
     const rc = document.querySelector('.g-recaptcha');
-    if (rc) {{{{ r.type = 'recaptchav2'; r.sitekey = rc.dataset.sitekey; }}}}
-  }}}}
-  if (!r.type && document.querySelector('script[src*="recaptcha"]')) {{{{
+    if (rc) { r.type = 'recaptchav2'; r.sitekey = rc.dataset.sitekey; }
+  }
+  if (!r.type && document.querySelector('script[src*="recaptcha"]')) {
     const el = document.querySelector('[data-sitekey]');
-    if (el) {{{{ r.type = 'recaptchav2'; r.sitekey = el.dataset.sitekey; }}}}
-  }}}}
+    if (el) { r.type = 'recaptchav2'; r.sitekey = el.dataset.sitekey; }
+  }
   // 5. FunCaptcha (Arkose Labs)
-  if (!r.type) {{{{
+  if (!r.type) {
     const fc = document.querySelector('#FunCaptcha, [data-pkey], .funcaptcha');
-    if (fc) {{{{ r.type = 'funcaptcha'; r.sitekey = fc.dataset.pkey; }}}}
-  }}}}
-  if (!r.type && document.querySelector('script[src*="arkoselabs"], script[src*="funcaptcha"]')) {{{{
+    if (fc) { r.type = 'funcaptcha'; r.sitekey = fc.dataset.pkey; }
+  }
+  if (!r.type && document.querySelector('script[src*="arkoselabs"], script[src*="funcaptcha"]')) {
     const el = document.querySelector('[data-pkey]');
-    if (el) {{{{ r.type = 'funcaptcha'; r.sitekey = el.dataset.pkey; }}}}
-  }}}}
-  if (r.type) {{{{ r.url = url; return r; }}}}
+    if (el) { r.type = 'funcaptcha'; r.sitekey = el.dataset.pkey; }
+  }
+  if (r.type) { r.url = url; return r; }
   return null;
-}}}}
+}
 
 Result actions:
 - null -> no CAPTCHA. Continue normally.
@@ -301,21 +305,21 @@ Result actions:
 Three steps: createTask -> poll -> inject. Do each as a separate browser_evaluate call.
 
 STEP 1 -- CREATE TASK (copy this exactly, fill in the 3 placeholders):
-browser_evaluate function: async () => {{{{
-  const r = await fetch('https://api.capsolver.com/createTask', {{{{
+browser_evaluate function: async () => {
+  const r = await fetch('https://api.capsolver.com/createTask', {
     method: 'POST',
-    headers: {{{{'Content-Type': 'application/json'}}}},
-    body: JSON.stringify({{{{
-      clientKey: '{capsolver_key}',
-      task: {{{{
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      clientKey: '__CAPSOLVER_KEY__',
+      task: {
         type: 'TASK_TYPE',
         websiteURL: 'PAGE_URL',
         websiteKey: 'SITE_KEY'
-      }}}}
-    }}}})
-  }}}});
+      }
+    })
+  });
   return await r.json();
-}}}}
+}
 
 TASK_TYPE values (use EXACTLY these strings):
   hcaptcha     -> HCaptchaTaskProxyLess
@@ -326,24 +330,24 @@ TASK_TYPE values (use EXACTLY these strings):
 
 PAGE_URL = the url from detect result. SITE_KEY = the sitekey from detect result.
 For recaptchav3: add "pageAction": "submit" to the task object (or the actual action found in page scripts).
-For turnstile: add "metadata": {{"action": "...", "cdata": "..."}} if those were in detect result.
+For turnstile: add "metadata": {"action": "...", "cdata": "..."} if those were in detect result.
 
-Response: {{"errorId": 0, "taskId": "abc123"}} on success.
+Response: {"errorId": 0, "taskId": "abc123"} on success.
 If errorId > 0 -> CAPTCHA SOLVE failed. Go to MANUAL FALLBACK.
 
 STEP 2 -- POLL (replace TASK_ID with the taskId from step 1):
 Loop: browser_wait_for time: 3, then run:
-browser_evaluate function: async () => {{{{
-  const r = await fetch('https://api.capsolver.com/getTaskResult', {{{{
+browser_evaluate function: async () => {
+  const r = await fetch('https://api.capsolver.com/getTaskResult', {
     method: 'POST',
-    headers: {{{{'Content-Type': 'application/json'}}}},
-    body: JSON.stringify({{{{
-      clientKey: '{capsolver_key}',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      clientKey: '__CAPSOLVER_KEY__',
       taskId: 'TASK_ID'
-    }}}})
-  }}}});
+    })
+  });
   return await r.json();
-}}}}
+}
 
 - status "processing" -> wait 3s, poll again. Max 10 polls (30s).
 - status "ready" -> extract token:
@@ -355,53 +359,53 @@ browser_evaluate function: async () => {{{{
 STEP 3 -- INJECT TOKEN (replace THE_TOKEN with actual token string):
 
 For reCAPTCHA v2/v3:
-browser_evaluate function: () => {{{{
+browser_evaluate function: () => {
   const token = 'THE_TOKEN';
-  document.querySelectorAll('[name="g-recaptcha-response"]').forEach(el => {{{{ el.value = token; el.style.display = 'block'; }}}});
-  if (window.___grecaptcha_cfg) {{{{
+  document.querySelectorAll('[name="g-recaptcha-response"]').forEach(el => { el.value = token; el.style.display = 'block'; });
+  if (window.___grecaptcha_cfg) {
     const clients = window.___grecaptcha_cfg.clients;
-    for (const key in clients) {{{{
-      const walk = (obj, d) => {{{{
+    for (const key in clients) {
+      const walk = (obj, d) => {
         if (d > 4 || !obj) return;
-        for (const k in obj) {{{{
-          if (typeof obj[k] === 'function' && k.length < 3) try {{{{ obj[k](token); }}}} catch(e) {{{{}}}}
+        for (const k in obj) {
+          if (typeof obj[k] === 'function' && k.length < 3) try { obj[k](token); } catch(e) {}
           else if (typeof obj[k] === 'object') walk(obj[k], d+1);
-        }}}}
-      }}}};
+        }
+      };
       walk(clients[key], 0);
-    }}}}
-  }}}}
+    }
+  }
   return 'injected';
-}}}}
+}
 
 For hCaptcha:
-browser_evaluate function: () => {{{{
+browser_evaluate function: () => {
   const token = 'THE_TOKEN';
   const ta = document.querySelector('[name="h-captcha-response"], textarea[name*="hcaptcha"]');
   if (ta) ta.value = token;
   document.querySelectorAll('iframe[data-hcaptcha-response]').forEach(f => f.setAttribute('data-hcaptcha-response', token));
   const cb = document.querySelector('[data-hcaptcha-widget-id]');
-  if (cb && window.hcaptcha) try {{{{ window.hcaptcha.getResponse(cb.dataset.hcaptchaWidgetId); }}}} catch(e) {{{{}}}}
+  if (cb && window.hcaptcha) try { window.hcaptcha.getResponse(cb.dataset.hcaptchaWidgetId); } catch(e) {}
   return 'injected';
-}}}}
+}
 
 For Turnstile:
-browser_evaluate function: () => {{{{
+browser_evaluate function: () => {
   const token = 'THE_TOKEN';
   const inp = document.querySelector('[name="cf-turnstile-response"], input[name*="turnstile"]');
   if (inp) inp.value = token;
-  if (window.turnstile) try {{{{ const w = document.querySelector('.cf-turnstile'); if (w) window.turnstile.getResponse(w); }}}} catch(e) {{{{}}}}
+  if (window.turnstile) try { const w = document.querySelector('.cf-turnstile'); if (w) window.turnstile.getResponse(w); } catch(e) {}
   return 'injected';
-}}}}
+}
 
 For FunCaptcha:
-browser_evaluate function: () => {{{{
+browser_evaluate function: () => {
   const token = 'THE_TOKEN';
   const inp = document.querySelector('#FunCaptcha-Token, input[name="fc-token"]');
   if (inp) inp.value = token;
-  if (window.ArkoseEnforcement) try {{{{ window.ArkoseEnforcement.setConfig({{{{data: {{{{blob: token}}}}}}}}) }}}} catch(e) {{{{}}}}
+  if (window.ArkoseEnforcement) try { window.ArkoseEnforcement.setConfig({data: {blob: token}}) } catch(e) {}
   return 'injected';
-}}}}
+}
 
 After injecting: browser_wait_for time: 2, then snapshot.
 - Widget gone or green check -> success. Click Submit if needed.
@@ -414,7 +418,11 @@ If CapSolver genuinely failed (errorId > 0):
 1. Audio challenge: Look for "audio" or "accessibility" button -> click it for an easier challenge.
 2. Text/logic puzzles: Solve them yourself. Think step by step. Common tricks: "All but 9 die" = 9 left. "3 sisters and 4 brothers, how many siblings?" = 7.
 3. Simple text captchas ("What is 3+7?", "Type the word") -> solve them.
-4. All else fails -> Output RESULT:CAPTCHA."""
+4. All else fails -> Output RESULT:CAPTCHA.""".replace(
+        "__KEY_DISPLAY__", key_display
+    ).replace(
+        "__CAPSOLVER_KEY__", capsolver_key
+    )
 
 
 def build_prompt(job: dict, tailored_resume: str,

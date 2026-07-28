@@ -39,3 +39,8 @@ Thumbs.db
 
 # Claude Code
 .claude/
+
+# Virtual Environment & Caches
+venv/
+.pytest_cache/
+

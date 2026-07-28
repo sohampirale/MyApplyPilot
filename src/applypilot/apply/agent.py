@@ -99,15 +99,16 @@ async def run_browser_agent(
     Returns:
         Tuple of (full_output_text, action_count).
     """
-    from browser_use import Agent, Browser, BrowserConfig
+    # FIX C1: browser-use 0.13.6 does NOT export BrowserConfig.
+    # Browser (alias for BrowserSession) accepts cdp_url directly.
+    from browser_use import Agent, Browser
 
     llm = _get_llm()
 
-    # Connect to the existing Chrome instance launched by chrome.py
+    # FIX C1: Connect to existing Chrome via CDP — pass cdp_url directly
+    # to Browser() constructor (no BrowserConfig wrapper needed).
     browser = Browser(
-        config=BrowserConfig(
-            cdp_url=f"http://localhost:{cdp_port}",
-        )
+        cdp_url=f"http://localhost:{cdp_port}",
     )
 
     # Build extended system message with ApplyPilot-specific guidance
@@ -128,6 +129,7 @@ async def run_browser_agent(
         extend_system_message=system_extension,
         max_actions_per_step=5,
         max_failures=5,
+        enable_signal_handler=False,  # We manage signals ourselves in launcher.py
     )
 
     # Track for cancellation support
@@ -156,10 +158,12 @@ async def run_browser_agent(
             for action_name in history.action_names():
                 on_action(action_name)
 
-        # Log errors if any
-        errors = history.errors()
-        if errors:
-            for err in errors:
+        # FIX: Only log actual errors, not None entries.
+        # history.errors() returns list[str | None] with None for
+        # successful steps. Filter out None before logging.
+        if history.has_errors():
+            actual_errors = [err for err in history.errors() if err is not None]
+            for err in actual_errors:
                 logger.warning("[worker-%d] Agent error: %s", worker_id, err)
                 output_text += f"\nERROR: {err}"
 
@@ -202,7 +206,11 @@ def run_agent_sync(
     Returns:
         Tuple of (full_output_text, action_count).
     """
+    # FIX C3: Bind the new event loop to this thread so that all internal
+    # asyncio calls (in browser-use, playwright, httpx, etc.) can find it
+    # via asyncio.get_event_loop() / asyncio.get_running_loop().
     loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
         return loop.run_until_complete(
             run_browser_agent(
@@ -214,18 +222,27 @@ def run_agent_sync(
             )
         )
     finally:
-        loop.close()
+        try:
+            loop.close()
+        except Exception:
+            pass
 
 
 def cancel_agent(worker_id: int) -> None:
-    """Cancel the active agent for a worker (used for Ctrl+C skip)."""
+    """Cancel the active agent for a worker (used for Ctrl+C skip).
+
+    Calls agent.stop() which sets an internal flag that causes the
+    agent's run loop to exit gracefully at the next step boundary.
+    agent.stop() is synchronous and thread-safe.
+    """
     with _agent_lock:
         agent = _active_agents.get(worker_id)
         if agent is not None:
-            # browser-use Agent doesn't have a direct cancel, but we can
-            # stop it by closing the browser or setting an internal flag
-            logger.info("[worker-%d] Cancelling agent", worker_id)
-            # The agent will be cleaned up in the finally block of run_browser_agent
+            logger.info("[worker-%d] Cancelling agent via agent.stop()", worker_id)
+            try:
+                agent.stop()
+            except Exception as exc:
+                logger.debug("[worker-%d] agent.stop() error: %s", worker_id, exc)
 
 
 def cancel_all_agents() -> None:

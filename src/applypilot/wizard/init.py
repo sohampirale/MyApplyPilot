@@ -59,18 +59,34 @@ def _setup_resume() -> None:
             shutil.copy2(src, RESUME_PDF_PATH)
             console.print(f"[green]Copied to {RESUME_PDF_PATH}[/green]")
 
-            # Also ask for a plain-text version for LLM consumption
-            txt_path_str = Prompt.ask(
-                "Plain-text version of your resume (.txt)",
-                default="",
-            )
-            if txt_path_str.strip():
-                txt_src = Path(txt_path_str.strip().strip('"').strip("'")).expanduser().resolve()
-                if txt_src.exists():
-                    shutil.copy2(txt_src, RESUME_PATH)
-                    console.print(f"[green]Copied to {RESUME_PATH}[/green]")
+            # A plain-text version is REQUIRED for LLM-based scoring and
+            # tailoring stages. Without it, Stages 2-4 will crash with
+            # FileNotFoundError.  Keep prompting until the user provides
+            # one or explicitly opts out (understanding the consequence).
+            while True:
+                txt_path_str = Prompt.ask(
+                    "Plain-text version of your resume (.txt) [bold yellow][required for scoring/tailoring][/bold yellow]",
+                    default="",
+                )
+                if txt_path_str.strip():
+                    txt_src = Path(txt_path_str.strip().strip('"').strip("'")).expanduser().resolve()
+                    if txt_src.exists():
+                        shutil.copy2(txt_src, RESUME_PATH)
+                        console.print(f"[green]Copied to {RESUME_PATH}[/green]")
+                        break
+                    else:
+                        console.print("[red]File not found. Please try again.[/red]")
                 else:
-                    console.print("[yellow]File not found, skipping plain-text copy.[/yellow]")
+                    # User pressed Enter without providing a path
+                    console.print(
+                        "[bold red]⚠ WARNING:[/bold red] Without a plain-text resume, "
+                        "the scoring (Stage 2) and tailoring (Stage 3) pipeline stages "
+                        "will fail. You can create one later at:\n"
+                        f"  [cyan]{RESUME_PATH}[/cyan]"
+                    )
+                    skip_ok = Confirm.ask("Continue without plain-text resume?", default=False)
+                    if skip_ok:
+                        break
         break
 
 

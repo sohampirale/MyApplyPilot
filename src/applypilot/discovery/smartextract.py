@@ -67,6 +67,11 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
     for r in reject:
         if r.lower() in loc:
             return False
+    # If no accept whitelist is configured, accept everything that
+    # wasn't rejected above. This prevents silently dropping ALL
+    # non-remote jobs when location_accept is empty/omitted.
+    if not accept:
+        return True
     for a in accept:
         if a.lower() in loc:
             return True
@@ -679,9 +684,18 @@ def extract_json(text: str) -> dict:
 # -- JSON path resolution ---------------------------------------------------
 
 def resolve_json_path_raw(data, path: str):
-    """Navigate a JSON path and return whatever is there (including lists/dicts)."""
-    if not path or not data:
+    """Navigate a JSON path and return whatever is there (including lists/dicts).
+
+    When path is empty/None and data is already a list, return data directly.
+    This handles APIs that return top-level JSON arrays (e.g. [{job1}, {job2}]).
+    """
+    if not data:
         return None
+    # FIX C6: If path is empty/None/"."/null and data is already a list,
+    # return it directly instead of returning None (which caused 0 jobs
+    # extracted from root-array API responses).
+    if not path or path in (".", "null", "None"):
+        return data if isinstance(data, list) else None
     try:
         current = data
         for part in path.replace("[", ".[").split("."):

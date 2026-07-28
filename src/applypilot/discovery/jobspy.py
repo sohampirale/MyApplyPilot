@@ -106,6 +106,12 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
         if r.lower() in loc:
             return False
 
+    # If no accept whitelist is configured, accept everything that
+    # wasn't rejected above. This prevents silently dropping ALL
+    # non-remote jobs when location_accept is empty/omitted.
+    if not accept:
+        return True
+
     # Accept matches
     for a in accept:
         if a.lower() in loc:
