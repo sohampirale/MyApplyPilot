@@ -28,59 +28,56 @@ _agent_lock = threading.Lock()
 
 
 def _get_llm():
-    """Create a LangChain ChatOpenAI instance from ApplyPilot's env config.
+    """Create a browser-use native LLM instance from ApplyPilot's env config.
 
-    Reads the same LLM_URL, LLM_MODEL, LLM_API_KEY, GEMINI_API_KEY,
-    OPENAI_API_KEY environment variables that llm.py uses, but returns
-    a LangChain-compatible object for browser-use.
+    Reads LLM_URL, LLM_MODEL, LLM_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
+    and returns native browser_use.llm objects (ChatDeepSeek, ChatGoogle, ChatOpenAI).
     """
-    from langchain_openai import ChatOpenAI
-
-    # Ensure ChatOpenAI exposes .provider and .model expected by browser-use
-    if not hasattr(ChatOpenAI, "provider"):
-        ChatOpenAI.provider = property(lambda self: getattr(self, "_provider", "openai"))
-    if not hasattr(ChatOpenAI, "model"):
-        ChatOpenAI.model = property(lambda self: getattr(self, "model_name", "gpt-4o-mini"))
-
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     local_url = os.environ.get("LLM_URL", "")
     model_override = os.environ.get("LLM_MODEL", "")
     api_key = os.environ.get("LLM_API_KEY", "")
 
-    if local_url:
-        # DeepSeek, Ollama, or any OpenAI-compatible endpoint
+    if local_url and "deepseek" in local_url.lower():
+        from browser_use.llm import ChatDeepSeek
         base_url = local_url.rstrip("/")
-        # Ensure /v1 suffix for LangChain compatibility
         if not base_url.endswith("/v1"):
             base_url = f"{base_url}/v1"
-        client = ChatOpenAI(
+        return ChatDeepSeek(
             model=model_override or "deepseek-chat",
-            openai_api_key=api_key or "not-needed",
-            openai_api_base=base_url,
+            api_key=api_key or "not-needed",
+            base_url=base_url,
             temperature=0.0,
         )
-        object.__setattr__(client, "_provider", "openai")
-        return client
+
+    if local_url:
+        from browser_use.llm import ChatOpenAI
+        base_url = local_url.rstrip("/")
+        if not base_url.endswith("/v1"):
+            base_url = f"{base_url}/v1"
+        return ChatOpenAI(
+            model=model_override or "gpt-4o-mini",
+            api_key=api_key or "not-needed",
+            base_url=base_url,
+            temperature=0.0,
+        )
 
     if gemini_key:
-        client = ChatOpenAI(
+        from browser_use.llm import ChatGoogle
+        return ChatGoogle(
             model=model_override or "gemini-2.0-flash",
-            openai_api_key=gemini_key,
-            openai_api_base="https://generativelanguage.googleapis.com/v1beta/openai",
+            api_key=gemini_key,
             temperature=0.0,
         )
-        object.__setattr__(client, "_provider", "google")
-        return client
 
     if openai_key:
-        client = ChatOpenAI(
+        from browser_use.llm import ChatOpenAI
+        return ChatOpenAI(
             model=model_override or "gpt-4o-mini",
-            openai_api_key=openai_key,
+            api_key=openai_key,
             temperature=0.0,
         )
-        object.__setattr__(client, "_provider", "openai")
-        return client
 
     raise RuntimeError(
         "No LLM provider configured. "
