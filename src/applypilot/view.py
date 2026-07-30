@@ -5,7 +5,8 @@ Generates a self-contained HTML dashboard with:
   - Score distribution bar chart
   - Jobs-by-source breakdown
   - Filterable job cards grouped by score
-  - Client-side search and score filtering
+  - Client-side search, score, and site filtering
+  - Modern modal dialog for job detail viewing
 """
 
 from __future__ import annotations
@@ -92,6 +93,14 @@ def generate_dashboard(output_path: str | None = None) -> str:
         "Dice": "#eb1c26", "Glassdoor": "#0caa41",
     }
 
+    # Extract unique site options for dropdown filter
+    unique_sites = sorted(list({j["site"] for j in jobs if j["site"]}))
+
+    # Site dropdown options HTML
+    site_options_html = '<option value="">All Sources</option>'
+    for site_item in unique_sites:
+        site_options_html += f'<option value="{escape(site_item)}">{escape(site_item)}</option>'
+
     # Score distribution bar chart
     score_bars = ""
     max_count = max(score_dist.values()) if score_dist else 1
@@ -100,7 +109,7 @@ def generate_dashboard(output_path: str | None = None) -> str:
         pct = (count / max_count * 100) if max_count else 0
         score_color = "#10b981" if s >= 7 else ("#f59e0b" if s >= 5 else "#ef4444")
         score_bars += f"""
-        <div class="score-row">
+        <div class="score-row" onclick="filterExactScore({s})" title="Click to view score {s} jobs">
           <span class="score-label">{s}</span>
           <div class="score-bar-track">
             <div class="score-bar-fill" style="width:{pct}%;background:{score_color}"></div>
@@ -112,22 +121,25 @@ def generate_dashboard(output_path: str | None = None) -> str:
     site_rows = ""
     for s in site_stats:
         site = s["site"] or "?"
-        color = colors.get(site, "#6b7280")
+        color = colors.get(site, "#818cf8")
         avg = s["avg_score"] or 0
         site_rows += f"""
-        <div class="site-row">
-          <div class="site-name" style="color:{color}">{escape(site)}</div>
-          <div class="site-nums">{s['total']} jobs &middot; {s['high_fit']} strong fit &middot; avg score {avg}</div>
+        <div class="site-row" onclick="filterBySite('{escape(site)}')" title="Click to filter by {escape(site)}">
+          <div class="site-header-flex">
+            <span class="site-name" style="color:{color}">{escape(site)}</span>
+            <span class="site-avg-badge">avg {avg}</span>
+          </div>
+          <div class="site-nums">{s['total']} jobs &middot; {s['high_fit']} strong fit</div>
           <div class="bar-track">
             <div class="bar-fill" style="width:{s['high_fit']/max(s['total'],1)*100}%;background:{color}"></div>
-            <div class="bar-fill" style="width:{s['mid_fit']/max(s['total'],1)*100}%;background:{color}66"></div>
+            <div class="bar-fill" style="width:{s['mid_fit']/max(s['total'],1)*100}%;background:{color}77"></div>
           </div>
         </div>"""
 
     # Job cards grouped by score
     job_sections = ""
     current_score = None
-    for j in jobs:
+    for idx, j in enumerate(jobs):
         score = j["fit_score"] or 0
         if score != current_score:
             if current_score is not None:
@@ -140,10 +152,13 @@ def generate_dashboard(output_path: str | None = None) -> str:
             }.get(score, f"Score {score}")
             count_at_score = score_dist.get(score, 0)
             job_sections += f"""
-            <h2 class="score-header" style="border-color:{score_color}">
-              <span class="score-badge" style="background:{score_color}">{score}</span>
-              {score_label} ({count_at_score} jobs)
-            </h2>
+            <div class="score-section-wrapper" data-score-header="{score}">
+              <h2 class="score-header" style="border-color:{score_color}">
+                <span class="score-badge" style="background:{score_color}">{score}</span>
+                <span class="score-title-text">{score_label}</span>
+                <span class="score-count-pill">{count_at_score} jobs</span>
+              </h2>
+            </div>
             <div class="job-grid" data-score="{score}">"""
             current_score = score
 
@@ -152,53 +167,78 @@ def generate_dashboard(output_path: str | None = None) -> str:
         salary = escape(j["salary"] or "")
         location = escape(j["location"] or "")
         site = escape(j["site"] or "")
-        site_color = colors.get(j["site"] or "", "#6b7280")
+        site_color = colors.get(j["site"] or "", "#818cf8")
         apply_url = escape(j["application_url"] or j["url"] or "")
 
         # Parse keywords and reasoning from score_reasoning
         reasoning_raw = j["score_reasoning"] or ""
-        reasoning_lines = reasoning_raw.split("\n")
-        keywords = reasoning_lines[0][:120] if reasoning_lines else ""
-        reasoning = reasoning_lines[1][:200] if len(reasoning_lines) > 1 else ""
+        reasoning_lines = [line.strip() for line in reasoning_raw.split("\n") if line.strip()]
+        keywords_str = reasoning_lines[0] if reasoning_lines else ""
+        reasoning_str = reasoning_lines[1] if len(reasoning_lines) > 1 else ""
 
-        desc_preview = escape(j["full_description"] or "")[:300]
-        full_desc_html = escape(j["full_description"] or "").replace("\n", "<br>")
-        desc_len = len(j["full_description"] or "")
+        # Format keyword chips
+        keyword_chips_html = ""
+        if keywords_str:
+            kw_list = [k.strip() for k in keywords_str.split(",") if k.strip()][:5]
+            for kw in kw_list:
+                keyword_chips_html += f'<span class="kw-chip">{escape(kw)}</span>'
+
+        desc_text = j["full_description"] or ""
+        desc_preview = escape(desc_text[:220])
+        full_desc_html = escape(desc_text).replace("\n", "<br>")
+
+        has_resume = bool(j["tailored_resume_path"])
 
         meta_parts = []
         meta_parts.append(
-            f'<span class="meta-tag site-tag" style="background:{site_color}33;color:{site_color}">{site}</span>'
+            f'<span class="meta-tag site-tag" style="background:{site_color}18;color:{site_color};border:1px solid {site_color}44">{site}</span>'
         )
-        has_resume = bool(j["tailored_resume_path"])
         if has_resume:
-            meta_parts.append('<span class="meta-tag resume-ready" style="background:#064e3b;color:#6ee7b7">📄 Resume Ready</span>')
+            meta_parts.append('<span class="meta-tag resume-ready">📄 Resume Ready</span>')
         else:
-            meta_parts.append('<span class="meta-tag resume-auto" style="background:#1e3a5f;color:#93c5fd">⚡ Auto-Tailors on Apply</span>')
+            meta_parts.append('<span class="meta-tag resume-auto">⚡ Auto-Tailors on Apply</span>')
         if salary:
-            meta_parts.append(f'<span class="meta-tag salary">{salary}</span>')
+            meta_parts.append(f'<span class="meta-tag salary">💰 {salary}</span>')
         if location:
-            meta_parts.append(f'<span class="meta-tag location">{location[:40]}</span>')
+            meta_parts.append(f'<span class="meta-tag location">📍 {location[:35]}</span>')
         meta_html = " ".join(meta_parts)
 
         apply_html = ""
         if apply_url:
             if has_resume:
-                apply_html = f'<a href="{apply_url}" class="apply-link" target="_blank">Apply</a>'
+                apply_html = f'<a href="{apply_url}" class="btn-primary apply-link" target="_blank">Apply <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>'
             else:
-                apply_html = f'<button class="tailor-apply-btn" onclick="tailorAndApply(this, \'{url}\', \'{apply_url}\')">⚡ Tailor & Apply</button>'
+                apply_html = f'<button class="btn-primary tailor-apply-btn" onclick="tailorAndApply(this, \'{url}\', \'{apply_url}\')">⚡ Tailor & Apply</button>'
+
+        card_id = f"job-card-{idx}"
 
         job_sections += f"""
-        <div class="job-card" data-score="{score}" data-site="{escape(j['site'] or '')}" data-location="{location.lower()}">
+        <div class="job-card" id="{card_id}" data-score="{score}" data-site="{escape(j['site'] or '')}" data-location="{location.lower()}">
           <div class="card-header">
-            <span class="score-pill" style="background:{'#10b981' if score >= 7 else '#f59e0b'}">{score}</span>
-            <a href="{url}" class="job-title" target="_blank">{title}</a>
+            <span class="score-pill score-{score}">{score}</span>
+            <a href="{url}" class="job-title" target="_blank" title="{title}">{title}</a>
           </div>
           <div class="meta-row">{meta_html}</div>
-          {f'<div class="keywords-row">{escape(keywords)}</div>' if keywords else ''}
-          {f'<div class="reasoning-row">{escape(reasoning)}</div>' if reasoning else ''}
+          {f'<div class="keywords-cloud">{keyword_chips_html}</div>' if keyword_chips_html else ''}
+          {f'<div class="reasoning-box"><span class="reasoning-icon">💡</span> <span class="reasoning-text">{escape(reasoning_str)}</span></div>' if reasoning_str else ''}
           <p class="desc-preview">{desc_preview}...</p>
-          {"<details class='full-desc-details'><summary class='expand-btn'>Full Description (" + f'{desc_len:,}' + " chars)</summary><div class='full-desc'>" + full_desc_html + "</div></details>" if j["full_description"] else ""}
-          <div class="card-footer">{apply_html}</div>
+          
+          <div class="full-desc-raw" style="display:none;">{full_desc_html}</div>
+          <div class="full-title-raw" style="display:none;">{title}</div>
+          <div class="apply-url-raw" style="display:none;">{apply_url}</div>
+          <div class="job-url-raw" style="display:none;">{url}</div>
+
+          <div class="card-footer">
+            <div class="card-footer-left">
+              <button class="btn-icon" onclick="copyLink('{apply_url}', this)" title="Copy Job Application Link">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+              {f'<button class="btn-secondary details-btn" onclick="openJobModal(\'{card_id}\')">👁️ Details</button>' if desc_text else ''}
+            </div>
+            <div class="card-footer-right">
+              {apply_html}
+            </div>
+          </div>
         </div>"""
 
     if current_score is not None:
@@ -209,165 +249,954 @@ def generate_dashboard(output_path: str | None = None) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ApplyPilot Dashboard</title>
+<title>ApplyPilot Dashboard — AI Job Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
 <style>
+  :root {{
+    --bg-dark: #090d16;
+    --bg-card: rgba(17, 24, 39, 0.75);
+    --bg-card-hover: rgba(30, 41, 59, 0.85);
+    --border-card: rgba(255, 255, 255, 0.08);
+    --border-card-hover: rgba(96, 165, 250, 0.3);
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --accent-emerald: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-rose: #ef4444;
+    --text-main: #f3f4f6;
+    --text-muted: #9ca3af;
+    --text-sub: #6b7280;
+    --font-heading: 'Plus Jakarta Sans', -apple-system, sans-serif;
+    --font-body: 'Inter', -apple-system, sans-serif;
+  }}
+
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; }}
+  body {{
+    font-family: var(--font-body);
+    background: var(--bg-dark);
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.12) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.08) 0px, transparent 50%),
+      radial-gradient(at 50% 100%, rgba(139, 92, 246, 0.08) 0px, transparent 50%);
+    background-attachment: fixed;
+    color: var(--text-main);
+    padding: 0;
+    margin: 0;
+    min-height: 100vh;
+  }}
 
-  h1 {{ font-size: 1.8rem; font-weight: 700; margin-bottom: 0.5rem; }}
-  .subtitle {{ color: #94a3b8; margin-bottom: 2rem; }}
+  /* Sticky Glass Navbar */
+  .navbar {{
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(9, 13, 22, 0.82);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border-card);
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+  }}
 
-  /* Summary cards */
-  .summary {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2.5rem; }}
-  .stat-card {{ background: #1e293b; border-radius: 12px; padding: 1.25rem; }}
-  .stat-num {{ font-size: 2rem; font-weight: 700; }}
-  .stat-label {{ color: #94a3b8; font-size: 0.85rem; margin-top: 0.25rem; }}
-  .stat-ok .stat-num {{ color: #10b981; }}
-  .stat-scored .stat-num {{ color: #60a5fa; }}
-  .stat-high .stat-num {{ color: #f59e0b; }}
-  .stat-total .stat-num {{ color: #e2e8f0; }}
+  .brand {{
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }}
+  .brand-logo {{
+    width: 38px;
+    height: 38px;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.4);
+  }}
+  .brand-title {{
+    font-family: var(--font-heading);
+    font-weight: 800;
+    font-size: 1.25rem;
+    letter-spacing: -0.02em;
+    background: linear-gradient(to right, #ffffff, #93c5fd);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }}
+  .live-badge {{
+    font-size: 0.7rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 600;
+  }}
+  .live-dot {{
+    width: 6px;
+    height: 6px;
+    background: #34d399;
+    border-radius: 50%;
+    box-shadow: 0 0 8px #34d399;
+    animation: pulse 2s infinite;
+  }}
 
-  /* Filters */
-  .filters {{ background: #1e293b; border-radius: 12px; padding: 1.25rem; margin-bottom: 2rem; display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }}
-  .filter-label {{ color: #94a3b8; font-size: 0.85rem; font-weight: 600; }}
-  .filter-btn {{ background: #334155; border: none; color: #94a3b8; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; font-size: 0.8rem; transition: all 0.15s; }}
-  .filter-btn:hover {{ background: #475569; color: #e2e8f0; }}
-  .filter-btn.active {{ background: #60a5fa; color: #0f172a; font-weight: 600; }}
-  .search-input {{ background: #334155; border: 1px solid #475569; color: #e2e8f0; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.8rem; width: 200px; }}
-  .search-input::placeholder {{ color: #64748b; }}
+  @keyframes pulse {{
+    0% {{ transform: scale(0.95); opacity: 0.8; }}
+    50% {{ transform: scale(1.15); opacity: 1; }}
+    100% {{ transform: scale(0.95); opacity: 0.8; }}
+  }}
 
-  /* Score distribution */
-  .score-section {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2.5rem; }}
-  .score-dist {{ background: #1e293b; border-radius: 12px; padding: 1.5rem; }}
-  .score-dist h3 {{ font-size: 1rem; margin-bottom: 1rem; color: #94a3b8; }}
-  .score-row {{ display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.4rem; }}
-  .score-label {{ width: 1.5rem; text-align: right; font-size: 0.85rem; font-weight: 600; }}
-  .score-bar-track {{ flex: 1; height: 14px; background: #334155; border-radius: 4px; overflow: hidden; }}
-  .score-bar-fill {{ height: 100%; border-radius: 4px; transition: width 0.3s; }}
-  .score-count {{ width: 2.5rem; font-size: 0.8rem; color: #94a3b8; }}
+  .container {{
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 2rem;
+  }}
 
-  /* Site bars */
-  .sites-section {{ background: #1e293b; border-radius: 12px; padding: 1.5rem; }}
-  .sites-section h3 {{ font-size: 1rem; margin-bottom: 1rem; color: #94a3b8; }}
-  .site-row {{ margin-bottom: 0.8rem; }}
-  .site-name {{ font-weight: 600; font-size: 0.9rem; }}
-  .site-nums {{ color: #94a3b8; font-size: 0.75rem; margin: 0.15rem 0; }}
-  .bar-track {{ height: 8px; background: #334155; border-radius: 4px; display: flex; overflow: hidden; }}
-  .bar-fill {{ height: 100%; transition: width 0.3s; }}
+  /* Top Stats Cards */
+  .summary-grid {{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.25rem;
+    margin-bottom: 2.5rem;
+  }}
+  .stat-card {{
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    padding: 1.5rem;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }}
+  .stat-card::before {{
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  }}
+  .stat-card:hover {{
+    transform: translateY(-3px);
+    border-color: rgba(255,255,255,0.18);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  }}
+  .stat-card.stat-total::before {{ background: linear-gradient(90deg, #3b82f6, #60a5fa); }}
+  .stat-card.stat-ready::before {{ background: linear-gradient(90deg, #10b981, #34d399); }}
+  .stat-card.stat-scored::before {{ background: linear-gradient(90deg, #8b5cf6, #a78bfa); }}
+  .stat-card.stat-high::before {{ background: linear-gradient(90deg, #f59e0b, #fbbf24); }}
 
-  /* Score group headers */
-  .score-header {{ font-size: 1.2rem; font-weight: 600; margin: 2.5rem 0 1rem; padding-bottom: 0.5rem; border-bottom: 3px solid; display: flex; align-items: center; gap: 0.75rem; }}
-  .score-badge {{ display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 8px; color: #0f172a; font-weight: 700; font-size: 1rem; }}
+  .stat-top {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }}
+  .stat-icon {{
+    font-size: 1.25rem;
+    opacity: 0.8;
+  }}
+  .stat-num {{
+    font-family: var(--font-heading);
+    font-size: 2.25rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }}
+  .stat-card.stat-total .stat-num {{ color: #f3f4f6; }}
+  .stat-card.stat-ready .stat-num {{ color: #34d399; }}
+  .stat-card.stat-scored .stat-num {{ color: #a78bfa; }}
+  .stat-card.stat-high .stat-num {{ color: #fbbf24; }}
 
-  /* Job grid */
-  .job-grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 1rem; }}
+  .stat-label {{
+    color: var(--text-muted);
+    font-size: 0.825rem;
+    font-weight: 500;
+  }}
 
-  .job-card {{ background: #1e293b; border-radius: 10px; padding: 1rem; border-left: 3px solid #334155; transition: all 0.15s; }}
-  .job-card:hover {{ transform: translateY(-2px); box-shadow: 0 4px 12px #00000044; }}
-  .job-card[data-score="9"], .job-card[data-score="10"] {{ border-left-color: #10b981; }}
-  .job-card[data-score="8"] {{ border-left-color: #34d399; }}
-  .job-card[data-score="7"] {{ border-left-color: #60a5fa; }}
-  .job-card[data-score="6"] {{ border-left-color: #f59e0b; }}
-  .job-card[data-score="5"] {{ border-left-color: #f59e0b88; }}
+  /* Filter Toolbar */
+  .toolbar {{
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 2rem;
+    display: flex;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+  }}
+  .filter-group {{
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }}
+  .filter-label {{
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-right: 0.25rem;
+  }}
+  .filter-btn {{
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+    padding: 0.45rem 0.9rem;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.825rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }}
+  .filter-btn:hover {{
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-main);
+  }}
+  .filter-btn.active {{
+    background: #3b82f6;
+    color: #ffffff;
+    border-color: #60a5fa;
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.4);
+    font-weight: 600;
+  }}
 
-  .card-header {{ display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }}
-  .score-pill {{ display: inline-flex; align-items: center; justify-content: center; min-width: 1.6rem; height: 1.6rem; border-radius: 6px; color: #0f172a; font-weight: 700; font-size: 0.8rem; flex-shrink: 0; }}
+  .site-select {{
+    background: rgba(17, 24, 39, 0.9);
+    border: 1px solid var(--border-card);
+    color: var(--text-main);
+    padding: 0.45rem 0.9rem;
+    border-radius: 10px;
+    font-size: 0.825rem;
+    outline: none;
+    cursor: pointer;
+  }}
 
-  .job-title {{ color: #e2e8f0; text-decoration: none; font-weight: 600; font-size: 0.95rem; }}
-  .job-title:hover {{ color: #60a5fa; }}
+  .search-wrapper {{
+    position: relative;
+    display: flex;
+    align-items: center;
+  }}
+  .search-icon {{
+    position: absolute;
+    left: 0.85rem;
+    color: var(--text-sub);
+    pointer-events: none;
+  }}
+  .search-input {{
+    background: rgba(17, 24, 39, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: var(--text-main);
+    padding: 0.5rem 1rem 0.5rem 2.4rem;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    width: 260px;
+    transition: all 0.2s ease;
+  }}
+  .search-input:focus {{
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.3);
+    width: 300px;
+  }}
+  .search-input::placeholder {{ color: var(--text-sub); }}
 
-  .meta-row {{ display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.4rem; }}
-  .meta-tag {{ font-size: 0.72rem; padding: 0.15rem 0.5rem; border-radius: 4px; background: #334155; color: #94a3b8; }}
-  .meta-tag.salary {{ background: #064e3b; color: #6ee7b7; }}
-  .meta-tag.location {{ background: #1e3a5f; color: #93c5fd; }}
+  /* Analytics Dashboard Charts */
+  .analytics-section {{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 2.5rem;
+  }}
+  .analytics-card {{
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    padding: 1.5rem;
+  }}
+  .analytics-card h3 {{
+    font-family: var(--font-heading);
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 1.25rem;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }}
 
-  .keywords-row {{ font-size: 0.75rem; color: #10b981; margin-bottom: 0.3rem; line-height: 1.4; }}
-  .reasoning-row {{ font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.5rem; font-style: italic; line-height: 1.4; }}
+  /* Score Dist Row */
+  .score-row {{
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    padding: 0.25rem 0.4rem;
+    border-radius: 6px;
+    transition: background 0.15s;
+  }}
+  .score-row:hover {{
+    background: rgba(255, 255, 255, 0.05);
+  }}
+  .score-label {{
+    width: 1.5rem;
+    text-align: right;
+    font-size: 0.85rem;
+    font-weight: 700;
+  }}
+  .score-bar-track {{
+    flex: 1;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    overflow: hidden;
+  }}
+  .score-bar-fill {{
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.4s ease;
+  }}
+  .score-count {{
+    width: 2.5rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 600;
+  }}
 
-  .desc-preview {{ font-size: 0.8rem; color: #64748b; line-height: 1.5; margin-bottom: 0.75rem; max-height: 3.6em; overflow: hidden; }}
+  /* Site Rows */
+  .site-row {{
+    margin-bottom: 0.85rem;
+    cursor: pointer;
+    padding: 0.4rem 0.5rem;
+    border-radius: 8px;
+    transition: background 0.15s;
+  }}
+  .site-row:hover {{
+    background: rgba(255, 255, 255, 0.05);
+  }}
+  .site-header-flex {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }}
+  .site-name {{
+    font-weight: 700;
+    font-size: 0.875rem;
+  }}
+  .site-avg-badge {{
+    font-size: 0.725rem;
+    color: var(--text-sub);
+    background: rgba(255, 255, 255, 0.06);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+  }}
+  .site-nums {{
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin: 0.2rem 0 0.4rem 0;
+  }}
+  .bar-track {{
+    height: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    display: flex;
+    overflow: hidden;
+  }}
+  .bar-fill {{ height: 100%; transition: width 0.4s ease; }}
 
-  .card-footer {{ display: flex; justify-content: flex-end; }}
-  .apply-link {{ font-size: 0.8rem; color: #60a5fa; text-decoration: none; padding: 0.3rem 0.8rem; border: 1px solid #60a5fa33; border-radius: 6px; font-weight: 500; }}
-  .apply-link:hover {{ background: #60a5fa22; }}
-  .tailor-apply-btn {{ font-size: 0.8rem; background: #3b82f622; color: #60a5fa; border: 1px solid #3b82f666; border-radius: 6px; font-weight: 600; padding: 0.35rem 0.85rem; cursor: pointer; transition: all 0.2s; }}
-  .tailor-apply-btn:hover {{ background: #3b82f644; color: #ffffff; border-color: #60a5fa; }}
-  .tailor-apply-btn:disabled {{ opacity: 0.7; cursor: wait; }}
+  /* Score Section Headers */
+  .score-section-wrapper {{
+    margin-top: 3rem;
+    margin-bottom: 1.25rem;
+  }}
+  .score-header {{
+    font-family: var(--font-heading);
+    font-size: 1.25rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 2px solid;
+  }}
+  .score-badge {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 10px;
+    color: #0f172a;
+    font-weight: 800;
+    font-size: 1.05rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }}
+  .score-title-text {{ flex: 1; color: var(--text-main); }}
+  .score-count-pill {{
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.08);
+    padding: 0.25rem 0.65rem;
+    border-radius: 20px;
+    font-weight: 600;
+  }}
 
-  /* Expandable full description */
-  .full-desc-details {{ margin-bottom: 0.75rem; }}
-  .expand-btn {{ font-size: 0.8rem; color: #60a5fa; cursor: pointer; list-style: none; padding: 0.3rem 0; }}
-  .expand-btn::-webkit-details-marker {{ display: none; }}
-  .expand-btn:hover {{ color: #93c5fd; }}
-  .full-desc {{ font-size: 0.8rem; color: #cbd5e1; line-height: 1.6; margin-top: 0.5rem; padding: 0.75rem; background: #0f172a; border-radius: 8px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }}
+  /* Job Grid */
+  .job-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 1.25rem;
+  }}
+
+  /* Job Cards */
+  .job-card {{
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+  }}
+  .job-card:hover {{
+    transform: translateY(-4px);
+    border-color: var(--border-card-hover);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+    background: var(--bg-card-hover);
+  }}
+
+  .card-header {{
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }}
+  .score-pill {{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 8px;
+    color: #0f172a;
+    font-weight: 800;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }}
+  .score-pill.score-10, .score-pill.score-9, .score-pill.score-8, .score-pill.score-7 {{
+    background: #10b981;
+  }}
+  .score-pill.score-6, .score-pill.score-5 {{
+    background: #f59e0b;
+  }}
+  .score-pill.score-4, .score-pill.score-3, .score-pill.score-2, .score-pill.score-1 {{
+    background: #ef4444;
+  }}
+
+  .job-title {{
+    color: var(--text-main);
+    text-decoration: none;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1.025rem;
+    line-height: 1.35;
+    transition: color 0.15s;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }}
+  .job-title:hover {{
+    color: #60a5fa;
+  }}
+
+  .meta-row {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+  }}
+  .meta-tag {{
+    font-size: 0.725rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
+    font-weight: 500;
+  }}
+  .meta-tag.resume-ready {{ background: rgba(6, 78, 59, 0.6); color: #6ee7b7; border: 1px solid rgba(52, 211, 153, 0.3); }}
+  .meta-tag.resume-auto {{ background: rgba(30, 58, 95, 0.6); color: #93c5fd; border: 1px solid rgba(147, 197, 253, 0.2); }}
+  .meta-tag.salary {{ background: rgba(16, 185, 129, 0.1); color: #34d399; }}
+  .meta-tag.location {{ background: rgba(59, 130, 246, 0.1); color: #93c5fd; }}
+
+  /* Keyword Chips */
+  .keywords-cloud {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-bottom: 0.75rem;
+  }}
+  .kw-chip {{
+    font-size: 0.7rem;
+    background: rgba(16, 185, 129, 0.12);
+    color: #34d399;
+    padding: 0.15rem 0.45rem;
+    border-radius: 4px;
+    border: 1px solid rgba(52, 211, 153, 0.2);
+  }}
+
+  /* Reasoning Box */
+  .reasoning-box {{
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.775rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+    display: flex;
+    gap: 0.4rem;
+  }}
+  .reasoning-icon {{ flex-shrink: 0; }}
+  .reasoning-text {{ font-style: italic; }}
+
+  .desc-preview {{
+    font-size: 0.8rem;
+    color: var(--text-sub);
+    line-height: 1.5;
+    margin-bottom: 1rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }}
+
+  /* Footer Actions */
+  .card-footer {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    margin-top: auto;
+  }}
+  .card-footer-left {{ display: flex; gap: 0.4rem; align-items: center; }}
+  .card-footer-right {{ display: flex; gap: 0.4rem; align-items: center; }}
+
+  .btn-primary {{
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #ffffff;
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    border: 1px solid #60a5fa;
+    border-radius: 8px;
+    padding: 0.45rem 0.95rem;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.3);
+  }}
+  .btn-primary:hover {{
+    transform: translateY(-1px);
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+  }}
+  .btn-primary:disabled {{
+    opacity: 0.75;
+    cursor: wait;
+  }}
+
+  .btn-secondary {{
+    font-size: 0.775rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 0.4rem 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }}
+  .btn-secondary:hover {{
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-main);
+  }}
+
+  .btn-icon {{
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-muted);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }}
+  .btn-icon:hover {{
+    background: rgba(255, 255, 255, 0.12);
+    color: #60a5fa;
+  }}
+
+  /* Modal Dialog for Full Job Description */
+  dialog#job-modal {{
+    margin: auto;
+    border: 1px solid var(--border-card-hover);
+    border-radius: 20px;
+    background: #0f172a;
+    color: var(--text-main);
+    padding: 2rem;
+    max-width: 720px;
+    width: 90vw;
+    max-height: 85vh;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+
+    /* Animation specs from Modern Web Guidance */
+    opacity: 0;
+    transform: scale(0.95);
+    transition-property: opacity, transform, display, overlay;
+    transition-duration: 0.25s;
+    transition-timing-function: ease-out;
+    transition-behavior: allow-discrete;
+  }}
+
+  dialog#job-modal[open] {{
+    opacity: 1;
+    transform: scale(1);
+
+    @starting-style {{
+      opacity: 0;
+      transform: scale(0.95);
+    }}
+  }}
+
+  dialog#job-modal::backdrop {{
+    background-color: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+    transition: display 0.25s allow-discrete, overlay 0.25s allow-discrete, background-color 0.25s ease-out;
+  }}
+
+  .modal-header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-card);
+  }}
+  .modal-title {{
+    font-family: var(--font-heading);
+    font-size: 1.35rem;
+    font-weight: 700;
+    line-height: 1.3;
+  }}
+  .modal-close-btn {{
+    background: rgba(255, 255, 255, 0.08);
+    border: none;
+    color: var(--text-muted);
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+    flex-shrink: 0;
+  }}
+  .modal-close-btn:hover {{ background: rgba(255, 255, 255, 0.2); color: #fff; }}
+
+  .modal-body {{
+    font-size: 0.875rem;
+    line-height: 1.65;
+    color: #cbd5e1;
+    max-height: 55vh;
+    overflow-y: auto;
+    padding-right: 0.5rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }}
+
+  .modal-footer {{
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-card);
+  }}
+
+  /* Toast Notification */
+  .toast-container {{
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }}
+  .toast {{
+    background: #1e293b;
+    border: 1px solid #3b82f6;
+    color: #ffffff;
+    padding: 0.75rem 1.25rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    animation: toastIn 0.3s ease-out forwards;
+  }}
+
+  @keyframes toastIn {{
+    from {{ opacity: 0; transform: translateY(10px); }}
+    to {{ opacity: 1; transform: translateY(0); }}
+  }}
 
   .hidden {{ display: none !important; }}
-  .job-count {{ color: #94a3b8; font-size: 0.85rem; margin-bottom: 1rem; }}
+  .job-count-status {{
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin-bottom: 1.25rem;
+  }}
 
-  @media (max-width: 768px) {{
-    .summary {{ grid-template-columns: repeat(2, 1fr); }}
-    .score-section {{ grid-template-columns: 1fr; }}
+  @media (max-width: 1024px) {{
+    .summary-grid {{ grid-template-columns: repeat(2, 1fr); }}
+    .analytics-section {{ grid-template-columns: 1fr; }}
     .job-grid {{ grid-template-columns: 1fr; }}
-    body {{ padding: 1rem; }}
+    .navbar {{ padding: 1rem; flex-direction: column; align-items: stretch; }}
+    .container {{ padding: 1rem; }}
   }}
 </style>
 </head>
 <body>
 
-<h1>ApplyPilot Dashboard</h1>
-<p class="subtitle">{total} jobs &middot; {scored} scored &middot; {high_fit} strong matches (7+)</p>
-
-<div class="summary">
-  <div class="stat-card stat-total"><div class="stat-num">{total}</div><div class="stat-label">Total Jobs</div></div>
-  <div class="stat-card stat-ok"><div class="stat-num">{ready}</div><div class="stat-label">Ready (desc + URL)</div></div>
-  <div class="stat-card stat-scored"><div class="stat-num">{scored}</div><div class="stat-label">Scored by LLM</div></div>
-  <div class="stat-card stat-high"><div class="stat-num">{high_fit}</div><div class="stat-label">Strong Fit (7+)</div></div>
-</div>
-
-<div class="filters">
-  <span class="filter-label">Score:</span>
-  <button class="filter-btn active" onclick="filterScore(0)">All Scored</button>
-  <button class="filter-btn" onclick="filterScore(5)">5+ Moderate</button>
-  <button class="filter-btn" onclick="filterScore(7)">7+ Strong</button>
-  <button class="filter-btn" onclick="filterScore(8)">8+ Excellent</button>
-  <button class="filter-btn" onclick="filterScore(9)">9+ Perfect</button>
-  <span class="filter-label" style="margin-left:1rem">Search:</span>
-  <input type="text" class="search-input" placeholder="Filter by title, site..." oninput="filterText(this.value)">
-</div>
-
-<div class="score-section">
-  <div class="score-dist">
-    <h3>Score Distribution</h3>
-    {score_bars}
+<!-- Glass Navbar -->
+<div class="navbar">
+  <div class="brand">
+    <div class="brand-logo">⚡</div>
+    <div>
+      <div class="brand-title">ApplyPilot</div>
+      <div class="live-badge"><span class="live-dot"></span> Dashboard Active</div>
+    </div>
   </div>
-  <div class="sites-section">
-    <h3>By Source</h3>
-    {site_rows}
+
+  <div class="search-wrapper">
+    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="main-search" class="search-input" placeholder="Search titles, skills, locations... (/)" oninput="filterText(this.value)">
   </div>
 </div>
 
-<div id="job-count" class="job-count"></div>
+<div class="container">
 
-{job_sections}
+  <!-- Summary Stats -->
+  <div class="summary-grid">
+    <div class="stat-card stat-total">
+      <div class="stat-top"><span class="stat-label">Total Jobs Discovered</span><span class="stat-icon">📊</span></div>
+      <div class="stat-num">{total}</div>
+    </div>
+    <div class="stat-card stat-ready">
+      <div class="stat-top"><span class="stat-label">Ready (Desc + URL)</span><span class="stat-icon">⚡</span></div>
+      <div class="stat-num">{ready}</div>
+    </div>
+    <div class="stat-card stat-scored">
+      <div class="stat-top"><span class="stat-label">Scored by AI</span><span class="stat-icon">🎯</span></div>
+      <div class="stat-num">{scored}</div>
+    </div>
+    <div class="stat-card stat-high">
+      <div class="stat-top"><span class="stat-label">Strong Matches (7+)</span><span class="stat-icon">🌟</span></div>
+      <div class="stat-num">{high_fit}</div>
+    </div>
+  </div>
+
+  <!-- Filter Toolbar -->
+  <div class="toolbar">
+    <div class="filter-group">
+      <span class="filter-label">Fit Score:</span>
+      <button class="filter-btn active" onclick="filterScore(0)">All Scored</button>
+      <button class="filter-btn" onclick="filterScore(5)">5+ Moderate</button>
+      <button class="filter-btn" onclick="filterScore(7)">7+ Strong</button>
+      <button class="filter-btn" onclick="filterScore(8)">8+ Excellent</button>
+      <button class="filter-btn" onclick="filterScore(9)">9+ Perfect</button>
+    </div>
+
+    <div class="filter-group">
+      <span class="filter-label">Source:</span>
+      <select id="site-filter" class="site-select" onchange="filterSite(this.value)">
+        {site_options_html}
+      </select>
+    </div>
+  </div>
+
+  <!-- Analytics Row -->
+  <div class="analytics-section">
+    <div class="analytics-card">
+      <h3><span>📊</span> Score Distribution</h3>
+      {score_bars}
+    </div>
+    <div class="analytics-card">
+      <h3><span>🌐</span> Source Distribution</h3>
+      {site_rows}
+    </div>
+  </div>
+
+  <div id="job-count" class="job-count-status"></div>
+
+  {job_sections}
+
+</div>
+
+<!-- Modal Dialog for Full Job Details -->
+<dialog id="job-modal">
+  <div class="modal-header">
+    <div class="modal-title" id="modal-job-title">Job Details</div>
+    <button class="modal-close-btn" onclick="closeJobModal()">&times;</button>
+  </div>
+  <div class="modal-body" id="modal-job-body">
+    Loading full job description...
+  </div>
+  <div class="modal-footer" id="modal-job-footer">
+    <button class="btn-secondary" onclick="closeJobModal()">Close</button>
+  </div>
+</dialog>
+
+<!-- Toast Container -->
+<div id="toast-container" class="toast-container"></div>
 
 <style>
-  .show-more-wrapper {{ grid-column: 1 / -1; display: flex; justify-content: center; margin-top: 1rem; }}
-  .show-more-btn {{ background: #3b82f622; border: 1px solid #3b82f666; color: #60a5fa; padding: 0.6rem 1.5rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }}
-  .show-more-btn:hover {{ background: #3b82f644; border-color: #60a5fa; color: #ffffff; transform: translateY(-1px); }}
+  .show-more-wrapper {{ grid-column: 1 / -1; display: flex; justify-content: center; margin-top: 1.5rem; }}
+  .show-more-btn {{
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    color: #60a5fa;
+    padding: 0.65rem 1.75rem;
+    border-radius: 10px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }}
+  .show-more-btn:hover {{
+    background: rgba(59, 130, 246, 0.25);
+    color: #ffffff;
+    transform: translateY(-2px);
+  }}
 </style>
 
 <script>
 let minScore = 0;
+let selectedSite = '';
 let searchText = '';
 const expandedGrids = new Set();
+
+// Keyboard shortcut '/' to focus search
+document.addEventListener('keydown', (e) => {{
+  if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {{
+    e.preventDefault();
+    document.getElementById('main-search').focus();
+  }}
+}});
+
+function showToast(msg) {{
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerHTML = `<span>✨</span> <span>${{msg}}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {{
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => toast.remove(), 300);
+  }}, 2500);
+}}
+
+function copyLink(url, btn) {{
+  navigator.clipboard.writeText(url).then(() => {{
+    showToast('Job application link copied to clipboard!');
+  }}).catch(() => {{
+    showToast('Failed to copy link');
+  }});
+}}
+
+function openJobModal(cardId) {{
+  const card = document.getElementById(cardId);
+  if (!card) return;
+  const title = card.querySelector('.full-title-raw')?.textContent || 'Job Details';
+  const desc = card.querySelector('.full-desc-raw')?.innerHTML || 'No description available.';
+  const applyUrl = card.querySelector('.apply-url-raw')?.textContent || '';
+  const jobUrl = card.querySelector('.job-url-raw')?.textContent || '';
+
+  document.getElementById('modal-job-title').textContent = title;
+  document.getElementById('modal-job-body').innerHTML = desc;
+
+  const footer = document.getElementById('modal-job-footer');
+  footer.innerHTML = `
+    <button class="btn-secondary" onclick="closeJobModal()">Close</button>
+    <button class="btn-secondary" onclick="copyLink('${{applyUrl}}', this)">📋 Copy Link</button>
+    <a href="${{applyUrl}}" target="_blank" class="btn-primary">Apply Now ↗</a>
+  `;
+
+  const modal = document.getElementById('job-modal');
+  modal.showModal();
+}}
+
+function closeJobModal() {{
+  const modal = document.getElementById('job-modal');
+  modal.close();
+}}
+
+// Close modal on backdrop click
+document.getElementById('job-modal').addEventListener('click', (e) => {{
+  const dialogBounds = e.target.getBoundingClientRect();
+  if (
+    e.clientX < dialogBounds.left ||
+    e.clientX > dialogBounds.right ||
+    e.clientY < dialogBounds.top ||
+    e.clientY > dialogBounds.bottom
+  ) {{
+    closeJobModal();
+  }}
+}});
 
 async function tailorAndApply(btn, jobUrl, applyUrl) {{
   btn.disabled = true;
   btn.textContent = '⏳ Tailoring Resume...';
 
-  // Open tab synchronously on click gesture to prevent browser popup blocking
   const newTab = window.open('about:blank', '_blank');
   if (newTab) {{
-    newTab.document.write('<div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0f172a;color:#e2e8f0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;"><h2>⚡ ApplyPilot is tailoring your resume...</h2><p style="color:#94a3b8;">Redirecting to application page shortly!</p></div>');
+    newTab.document.write('<div style="font-family:Inter,sans-serif;background:#090d16;color:#f3f4f6;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;"><h2>⚡ ApplyPilot is tailoring your resume...</h2><p style="color:#9ca3af;">Redirecting to application page shortly!</p></div>');
   }}
 
   try {{
@@ -390,14 +1219,13 @@ async function tailorAndApply(btn, jobUrl, applyUrl) {{
     if (badge) {{
       badge.textContent = '📄 Resume Ready';
       badge.className = 'meta-tag resume-ready';
-      badge.style.background = '#064e3b';
-      badge.style.color = '#6ee7b7';
     }}
 
-    btn.textContent = 'Apply';
-    btn.className = 'apply-link';
+    btn.textContent = 'Apply ↗';
+    btn.className = 'btn-primary apply-link';
     btn.disabled = false;
     btn.onclick = () => window.open(targetUrl, '_blank');
+    showToast('Resume tailored successfully!');
   }} catch (e) {{
     if (newTab && !newTab.closed) newTab.location.href = applyUrl;
     else window.location.href = applyUrl;
@@ -408,6 +1236,24 @@ function filterScore(min) {{
   minScore = min;
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   event.target.classList.add('active');
+  applyFilters();
+}}
+
+function filterExactScore(score) {{
+  minScore = score;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  applyFilters();
+}}
+
+function filterSite(site) {{
+  selectedSite = site;
+  applyFilters();
+}}
+
+function filterBySite(site) {{
+  selectedSite = site;
+  const select = document.getElementById('site-filter');
+  if (select) select.value = site;
   applyFilters();
 }}
 
@@ -437,13 +1283,16 @@ function applyFilters() {{
     cards.forEach(card => {{
       total++;
       const cardScore = parseInt(card.dataset.score) || 0;
+      const cardSite = card.dataset.site || '';
       const text = card.textContent.toLowerCase();
-      const scoreMatch = minScore === 0 ? true : cardScore >= minScore;
+
+      const scoreMatch = minScore === 0 ? true : (minScore >= 5 ? cardScore >= minScore : cardScore === minScore);
+      const siteMatch = !selectedSite || cardSite === selectedSite;
       const textMatch = !searchText || text.includes(searchText);
 
-      if (scoreMatch && textMatch) {{
+      if (scoreMatch && siteMatch && textMatch) {{
         gridMatching++;
-        const isExpanded = expandedGrids.has(score) || Boolean(searchText);
+        const isExpanded = expandedGrids.has(score) || Boolean(searchText) || Boolean(selectedSite);
         if (isExpanded || gridMatching <= 6) {{
           card.classList.remove('hidden');
           shown++;
@@ -462,24 +1311,24 @@ function applyFilters() {{
       grid.after(btnWrapper);
     }}
 
-    const isExpanded = expandedGrids.has(score) || Boolean(searchText);
+    const isExpanded = expandedGrids.has(score) || Boolean(searchText) || Boolean(selectedSite);
     const hiddenInGrid = gridMatching - 6;
 
-    if (gridMatching > 6 && !searchText) {{
+    if (gridMatching > 6 && !searchText && !selectedSite) {{
       btnWrapper.style.display = 'flex';
-      btnWrapper.innerHTML = `<button class="show-more-btn" onclick="toggleGridExpand(${{score}})">${{isExpanded ? 'Show Less' : 'Show More (+' + hiddenInGrid + ' jobs)'}}</button>`;
+      btnWrapper.innerHTML = `<button class="show-more-btn" onclick="toggleGridExpand(${{score}})">${{isExpanded ? 'Collapse' : 'Show More (+' + hiddenInGrid + ' jobs)'}}</button>`;
     }} else {{
       btnWrapper.style.display = 'none';
     }}
 
-    const header = grid.previousElementSibling;
-    if (header && header.classList.contains('score-header')) {{
-      header.style.display = gridMatching > 0 ? '' : 'none';
+    const headerWrapper = grid.previousElementSibling;
+    if (headerWrapper && headerWrapper.classList.contains('score-section-wrapper')) {{
+      headerWrapper.style.display = gridMatching > 0 ? '' : 'none';
       grid.style.display = gridMatching > 0 ? '' : 'none';
     }}
   }});
 
-  document.getElementById('job-count').textContent = `Showing ${{shown}} of ${{total}} jobs`;
+  document.getElementById('job-count').textContent = `Showing ${{shown}} of ${{total}} scored jobs`;
 }}
 
 applyFilters();
