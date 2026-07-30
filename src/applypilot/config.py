@@ -21,8 +21,13 @@ TAILORED_DIR = APP_DIR / "tailored_resumes"
 COVER_LETTER_DIR = APP_DIR / "cover_letters"
 LOG_DIR = APP_DIR / "logs"
 
-# Chrome worker isolation
-CHROME_WORKER_DIR = APP_DIR / "chrome-workers"
+# Chrome worker isolation (use snap/chromium/common on Linux if snap chromium is present to prevent AppArmor crashes)
+_snap_dir = Path.home() / "snap" / "chromium" / "common" / "applypilot"
+if _snap_dir.parent.exists():
+    CHROME_WORKER_DIR = _snap_dir / "chrome-workers"
+else:
+    CHROME_WORKER_DIR = APP_DIR / "chrome-workers"
+
 APPLY_WORKER_DIR = APP_DIR / "apply-workers"
 
 # Package-shipped config (YAML registries)
