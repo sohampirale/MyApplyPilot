@@ -144,7 +144,7 @@ def generate_dashboard(output_path: str | None = None) -> str:
               <span class="score-badge" style="background:{score_color}">{score}</span>
               {score_label} ({count_at_score} jobs)
             </h2>
-            <div class="job-grid">"""
+            <div class="job-grid" data-score="{score}">"""
             current_score = score
 
         title = escape(j["title"] or "Untitled")
@@ -314,7 +314,8 @@ def generate_dashboard(output_path: str | None = None) -> str:
 
 <div class="filters">
   <span class="filter-label">Score:</span>
-  <button class="filter-btn active" onclick="filterScore(0)">All 5+</button>
+  <button class="filter-btn active" onclick="filterScore(0)">All Scored</button>
+  <button class="filter-btn" onclick="filterScore(5)">5+ Moderate</button>
   <button class="filter-btn" onclick="filterScore(7)">7+ Strong</button>
   <button class="filter-btn" onclick="filterScore(8)">8+ Excellent</button>
   <button class="filter-btn" onclick="filterScore(9)">9+ Perfect</button>
@@ -337,9 +338,16 @@ def generate_dashboard(output_path: str | None = None) -> str:
 
 {job_sections}
 
+<style>
+  .show-more-wrapper {{ grid-column: 1 / -1; display: flex; justify-content: center; margin-top: 1rem; }}
+  .show-more-btn {{ background: #3b82f622; border: 1px solid #3b82f666; color: #60a5fa; padding: 0.6rem 1.5rem; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }}
+  .show-more-btn:hover {{ background: #3b82f644; border-color: #60a5fa; color: #ffffff; transform: translateY(-1px); }}
+</style>
+
 <script>
 let minScore = 0;
 let searchText = '';
+const expandedGrids = new Set();
 
 function filterScore(min) {{
   minScore = min;
@@ -353,33 +361,70 @@ function filterText(text) {{
   applyFilters();
 }}
 
+function toggleGridExpand(score) {{
+  if (expandedGrids.has(score)) {{
+    expandedGrids.delete(score);
+  }} else {{
+    expandedGrids.add(score);
+  }}
+  applyFilters();
+}}
+
 function applyFilters() {{
   let shown = 0;
   let total = 0;
-  document.querySelectorAll('.job-card').forEach(card => {{
-    total++;
-    const score = parseInt(card.dataset.score) || 0;
-    const text = card.textContent.toLowerCase();
-    const scoreMatch = score >= (minScore || 5);
-    const textMatch = !searchText || text.includes(searchText);
-    if (scoreMatch && textMatch) {{
-      card.classList.remove('hidden');
-      shown++;
-    }} else {{
-      card.classList.add('hidden');
-    }}
-  }});
-  document.getElementById('job-count').textContent = `Showing ${{shown}} of ${{total}} jobs`;
+  
+  document.querySelectorAll('.job-grid').forEach(grid => {{
+    const score = parseInt(grid.dataset.score) || 0;
+    const cards = Array.from(grid.querySelectorAll('.job-card'));
+    let gridMatching = 0;
 
-  // Hide empty score groups
-  document.querySelectorAll('.score-header').forEach(header => {{
-    const grid = header.nextElementSibling;
-    if (grid && grid.classList.contains('job-grid')) {{
-      const visible = grid.querySelectorAll('.job-card:not(.hidden)').length;
-      header.style.display = visible ? '' : 'none';
-      grid.style.display = visible ? '' : 'none';
+    cards.forEach(card => {{
+      total++;
+      const cardScore = parseInt(card.dataset.score) || 0;
+      const text = card.textContent.toLowerCase();
+      const scoreMatch = minScore === 0 ? true : cardScore >= minScore;
+      const textMatch = !searchText || text.includes(searchText);
+
+      if (scoreMatch && textMatch) {{
+        gridMatching++;
+        const isExpanded = expandedGrids.has(score) || Boolean(searchText);
+        if (isExpanded || gridMatching <= 6) {{
+          card.classList.remove('hidden');
+          shown++;
+        }} else {{
+          card.classList.add('hidden');
+        }}
+      }} else {{
+        card.classList.add('hidden');
+      }}
+    }});
+
+    let btnWrapper = grid.nextElementSibling;
+    if (!btnWrapper || !btnWrapper.classList.contains('show-more-wrapper')) {{
+      btnWrapper = document.createElement('div');
+      btnWrapper.className = 'show-more-wrapper';
+      grid.after(btnWrapper);
+    }}
+
+    const isExpanded = expandedGrids.has(score) || Boolean(searchText);
+    const hiddenInGrid = gridMatching - 6;
+
+    if (gridMatching > 6 && !searchText) {{
+      btnWrapper.style.display = 'flex';
+      btnWrapper.innerHTML = `<button class="show-more-btn" onclick="toggleGridExpand(${{score}})">${{isExpanded ? 'Show Less' : 'Show More (+' + hiddenInGrid + ' jobs)'}}</button>`;
+    }} else {{
+      btnWrapper.style.display = 'none';
+    }}
+
+    const header = grid.previousElementSibling;
+    if (header && header.classList.contains('score-header')) {{
+      header.style.display = gridMatching > 0 ? '' : 'none';
+      grid.style.display = gridMatching > 0 ? '' : 'none';
     }}
   }});
+
+  document.getElementById('job-count').textContent = `Showing ${{shown}} of ${{total}} jobs`;
 }}
 
 applyFilters();
