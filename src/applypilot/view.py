@@ -76,7 +76,7 @@ def generate_dashboard(output_path: str | None = None) -> str:
     jobs = conn.execute("""
         SELECT url, title, salary, description, location, site, strategy,
                full_description, application_url, detail_error,
-               fit_score, score_reasoning
+               fit_score, score_reasoning, tailored_resume_path
         FROM jobs
         WHERE fit_score >= 1
         ORDER BY fit_score DESC, site, title
@@ -169,6 +169,11 @@ def generate_dashboard(output_path: str | None = None) -> str:
         meta_parts.append(
             f'<span class="meta-tag site-tag" style="background:{site_color}33;color:{site_color}">{site}</span>'
         )
+        has_resume = bool(j["tailored_resume_path"])
+        if has_resume:
+            meta_parts.append('<span class="meta-tag resume-ready" style="background:#064e3b;color:#6ee7b7">📄 Resume Ready</span>')
+        else:
+            meta_parts.append('<span class="meta-tag resume-auto" style="background:#1e3a5f;color:#93c5fd">⚡ Auto-Tailors on Apply</span>')
         if salary:
             meta_parts.append(f'<span class="meta-tag salary">{salary}</span>')
         if location:

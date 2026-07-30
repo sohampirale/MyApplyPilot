@@ -114,7 +114,7 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
                 SELECT url, title, site, application_url, tailored_resume_path,
                        fit_score, location, full_description, cover_letter_path
                 FROM jobs
-                WHERE tailored_resume_path IS NOT NULL
+                WHERE (tailored_resume_path IS NOT NULL OR full_description IS NOT NULL)
                   AND (apply_status IS NULL OR apply_status = 'failed')
                   AND (apply_attempts IS NULL OR apply_attempts < ?)
                   AND fit_score >= ?
@@ -140,16 +140,37 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
             logger.info("Skipping manual ATS: %s", row["url"][:80])
             return None
 
+        job_data = dict(row)
+
+        # On-the-fly resume tailoring if missing
+        if not job_data.get("tailored_resume_path") and job_data.get("full_description"):
+            try:
+                from applypilot.scoring.tailor import tailor_resume, load_profile, RESUME_PATH, TAILORED_DIR
+                profile = load_profile()
+                resume_text = RESUME_PATH.read_text(encoding="utf-8")
+                TAILORED_DIR.mkdir(parents=True, exist_ok=True)
+                tailored, report = tailor_resume(resume_text, job_data, profile)
+                if tailored and report.get("status") in ("APPROVED", "APPROVED_WITH_JUDGE_WARNING"):
+                    clean_site = (job_data.get("site") or "job").replace(" ", "_")
+                    clean_title = (job_data.get("title") or "role").replace(" ", "_").replace("/", "_")[:30]
+                    res_file = TAILORED_DIR / f"{clean_site}_{clean_title}.pdf"
+                    job_data["tailored_resume_path"] = res_file.as_posix()
+                    conn.execute("UPDATE jobs SET tailored_resume_path = ? WHERE url = ?", (job_data["tailored_resume_path"], job_data["url"]))
+                    conn.commit()
+                    logger.info("On-the-fly resume generated: %s", job_data["tailored_resume_path"])
+            except Exception as e:
+                logger.warning("On-the-fly tailoring failed for %s: %s", job_data["url"], e)
+
         now = datetime.now(timezone.utc).isoformat()
         conn.execute("""
             UPDATE jobs SET apply_status = 'in_progress',
                            agent_id = ?,
                            last_attempted_at = ?
             WHERE url = ?
-        """, (f"worker-{worker_id}", now, row["url"]))
+        """, (f"worker-{worker_id}", now, job_data["url"]))
         conn.commit()
 
-        return dict(row)
+        return job_data
     except Exception:
         conn.rollback()
         raise
