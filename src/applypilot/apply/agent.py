@@ -36,6 +36,12 @@ def _get_llm():
     """
     from langchain_openai import ChatOpenAI
 
+    # Ensure ChatOpenAI exposes .provider and .model expected by browser-use
+    if not hasattr(ChatOpenAI, "provider"):
+        ChatOpenAI.provider = property(lambda self: getattr(self, "_provider", "openai"))
+    if not hasattr(ChatOpenAI, "model"):
+        ChatOpenAI.model = property(lambda self: getattr(self, "model_name", "gpt-4o-mini"))
+
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
     local_url = os.environ.get("LLM_URL", "")
@@ -48,27 +54,33 @@ def _get_llm():
         # Ensure /v1 suffix for LangChain compatibility
         if not base_url.endswith("/v1"):
             base_url = f"{base_url}/v1"
-        return ChatOpenAI(
+        client = ChatOpenAI(
             model=model_override or "deepseek-chat",
             openai_api_key=api_key or "not-needed",
             openai_api_base=base_url,
             temperature=0.0,
         )
+        object.__setattr__(client, "_provider", "openai")
+        return client
 
     if gemini_key:
-        return ChatOpenAI(
+        client = ChatOpenAI(
             model=model_override or "gemini-2.0-flash",
             openai_api_key=gemini_key,
             openai_api_base="https://generativelanguage.googleapis.com/v1beta/openai",
             temperature=0.0,
         )
+        object.__setattr__(client, "_provider", "google")
+        return client
 
     if openai_key:
-        return ChatOpenAI(
+        client = ChatOpenAI(
             model=model_override or "gpt-4o-mini",
             openai_api_key=openai_key,
             temperature=0.0,
         )
+        object.__setattr__(client, "_provider", "openai")
+        return client
 
     raise RuntimeError(
         "No LLM provider configured. "
