@@ -448,5 +448,16 @@ def doctor() -> None:
     console.print()
 
 
+@app.command()
+def serve(
+    port: int = typer.Option(8501, "--port", "-p", help="Port to run dashboard server on."),
+    open_browser: bool = typer.Option(True, "--open/--no-open", help="Open browser on launch."),
+) -> None:
+    """Start interactive dashboard server with on-the-fly tailoring API."""
+    from applypilot.server import start_server
+
+    start_server(port=port, open_browser=open_browser)
+
+
 if __name__ == "__main__":
     app()

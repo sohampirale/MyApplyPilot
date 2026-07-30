@@ -182,7 +182,10 @@ def generate_dashboard(output_path: str | None = None) -> str:
 
         apply_html = ""
         if apply_url:
-            apply_html = f'<a href="{apply_url}" class="apply-link" target="_blank">Apply</a>'
+            if has_resume:
+                apply_html = f'<a href="{apply_url}" class="apply-link" target="_blank">Apply</a>'
+            else:
+                apply_html = f'<button class="tailor-apply-btn" onclick="tailorAndApply(this, \'{url}\', \'{apply_url}\')">⚡ Tailor & Apply</button>'
 
         job_sections += f"""
         <div class="job-card" data-score="{score}" data-site="{escape(j['site'] or '')}" data-location="{location.lower()}">
@@ -286,6 +289,9 @@ def generate_dashboard(output_path: str | None = None) -> str:
   .card-footer {{ display: flex; justify-content: flex-end; }}
   .apply-link {{ font-size: 0.8rem; color: #60a5fa; text-decoration: none; padding: 0.3rem 0.8rem; border: 1px solid #60a5fa33; border-radius: 6px; font-weight: 500; }}
   .apply-link:hover {{ background: #60a5fa22; }}
+  .tailor-apply-btn {{ font-size: 0.8rem; background: #3b82f622; color: #60a5fa; border: 1px solid #3b82f666; border-radius: 6px; font-weight: 600; padding: 0.35rem 0.85rem; cursor: pointer; transition: all 0.2s; }}
+  .tailor-apply-btn:hover {{ background: #3b82f644; color: #ffffff; border-color: #60a5fa; }}
+  .tailor-apply-btn:disabled {{ opacity: 0.7; cursor: wait; }}
 
   /* Expandable full description */
   .full-desc-details {{ margin-bottom: 0.75rem; }}
@@ -353,6 +359,36 @@ def generate_dashboard(output_path: str | None = None) -> str:
 let minScore = 0;
 let searchText = '';
 const expandedGrids = new Set();
+
+async function tailorAndApply(btn, jobUrl, applyUrl) {{
+  btn.disabled = true;
+  btn.textContent = '⏳ Tailoring Resume...';
+  try {{
+    const res = await fetch('/api/tailor', {{
+      method: 'POST',
+      headers: {{ 'Content-Type': 'application/json' }},
+      body: JSON.stringify({{ url: jobUrl }})
+    }});
+    const data = await res.json();
+    if (data.status === 'ok') {{
+      btn.textContent = '✅ Resume Ready!';
+      btn.className = 'apply-link';
+      setTimeout(() => {{ window.open(data.apply_url || applyUrl, '_blank'); }}, 300);
+      const card = btn.closest('.job-card');
+      const badge = card ? card.querySelector('.resume-auto') : null;
+      if (badge) {{
+        badge.textContent = '📄 Resume Ready';
+        badge.className = 'meta-tag resume-ready';
+        badge.style.background = '#064e3b';
+        badge.style.color = '#6ee7b7';
+      }}
+    }} else {{
+      window.open(applyUrl, '_blank');
+    }}
+  }} catch (e) {{
+    window.open(applyUrl, '_blank');
+  }}
+}}
 
 function filterScore(min) {{
   minScore = min;
