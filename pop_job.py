@@ -11,7 +11,7 @@ import sys
 import argparse
 from applypilot.database import get_connection
 
-def pop_jobs(count: int = 1, peek: bool = False, min_score: int = 7) -> None:
+def pop_jobs(count: int = 1, peek: bool = False, min_score: int = 4) -> None:
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
@@ -51,7 +51,7 @@ def main():
     parser = argparse.ArgumentParser(description="Pop top job(s) from ApplyPilot queue.")
     parser.add_argument("-n", "--count", type=int, default=1, help="Number of jobs to pop (default: 1)")
     parser.add_argument("--peek", action="store_true", help="Inspect top job without deleting")
-    parser.add_argument("--min-score", type=int, default=7, help="Minimum fit score threshold (default: 7)")
+    parser.add_argument("--min-score", type=int, default=4, help="Minimum fit score threshold (default: 4)")
     args = parser.parse_args()
 
     pop_jobs(count=args.count, peek=args.peek, min_score=args.min_score)
