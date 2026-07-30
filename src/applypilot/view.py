@@ -363,6 +363,13 @@ const expandedGrids = new Set();
 async function tailorAndApply(btn, jobUrl, applyUrl) {{
   btn.disabled = true;
   btn.textContent = '⏳ Tailoring Resume...';
+
+  // Open tab synchronously on click gesture to prevent browser popup blocking
+  const newTab = window.open('about:blank', '_blank');
+  if (newTab) {{
+    newTab.document.write('<div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#0f172a;color:#e2e8f0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;"><h2>⚡ ApplyPilot is tailoring your resume...</h2><p style="color:#94a3b8;">Redirecting to application page shortly!</p></div>');
+  }}
+
   try {{
     const res = await fetch('/api/tailor', {{
       method: 'POST',
@@ -370,23 +377,30 @@ async function tailorAndApply(btn, jobUrl, applyUrl) {{
       body: JSON.stringify({{ url: jobUrl }})
     }});
     const data = await res.json();
-    if (data.status === 'ok') {{
-      btn.textContent = '✅ Resume Ready!';
-      btn.className = 'apply-link';
-      setTimeout(() => {{ window.open(data.apply_url || applyUrl, '_blank'); }}, 300);
-      const card = btn.closest('.job-card');
-      const badge = card ? card.querySelector('.resume-auto') : null;
-      if (badge) {{
-        badge.textContent = '📄 Resume Ready';
-        badge.className = 'meta-tag resume-ready';
-        badge.style.background = '#064e3b';
-        badge.style.color = '#6ee7b7';
-      }}
+    const targetUrl = (data.status === 'ok' && data.apply_url) ? data.apply_url : applyUrl;
+
+    if (newTab && !newTab.closed) {{
+      newTab.location.href = targetUrl;
     }} else {{
-      window.open(applyUrl, '_blank');
+      window.location.href = targetUrl;
     }}
+
+    const card = btn.closest('.job-card');
+    const badge = card ? card.querySelector('.resume-auto') : null;
+    if (badge) {{
+      badge.textContent = '📄 Resume Ready';
+      badge.className = 'meta-tag resume-ready';
+      badge.style.background = '#064e3b';
+      badge.style.color = '#6ee7b7';
+    }}
+
+    btn.textContent = 'Apply';
+    btn.className = 'apply-link';
+    btn.disabled = false;
+    btn.onclick = () => window.open(targetUrl, '_blank');
   }} catch (e) {{
-    window.open(applyUrl, '_blank');
+    if (newTab && !newTab.closed) newTab.location.href = applyUrl;
+    else window.location.href = applyUrl;
   }}
 }}
 
