@@ -27,13 +27,17 @@ _agent_lock = threading.Lock()
 def _get_model_name() -> str:
     """Determine the model name for Google Antigravity SDK.
 
-    Reads AGY_MODEL or LLM_MODEL from environment, defaulting to 'gemini-2.5-pro'.
+    Reads AGY_MODEL or GEMINI_MODEL from environment. If LLM_MODEL starts with 'gemini',
+    it uses LLM_MODEL, otherwise defaults to 'gemini-2.5-pro'.
     """
-    return (
-        os.environ.get("AGY_MODEL")
-        or os.environ.get("LLM_MODEL")
-        or "gemini-2.5-pro"
-    )
+    model = os.environ.get("AGY_MODEL") or os.environ.get("GEMINI_MODEL") or ""
+    if not model:
+        llm_model = os.environ.get("LLM_MODEL", "")
+        if "gemini" in llm_model.lower():
+            model = llm_model
+        else:
+            model = "gemini-2.5-pro"
+    return model
 
 
 async def run_antigravity_agent(

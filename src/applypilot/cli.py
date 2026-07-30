@@ -147,7 +147,7 @@ def apply(
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max applications to submit."),
     workers: int = typer.Option(1, "--workers", "-w", help="Number of parallel browser workers."),
     min_score: int = typer.Option(7, "--min-score", help="Minimum fit score for job selection."),
-    model: str = typer.Option("deepseek-chat", "--model", "-m", help="LLM model name (from .env config)."),
+    model: str = typer.Option("gemini-2.5-pro", "--model", "-m", help="LLM model name (e.g. gemini-2.5-pro)."),
     continuous: bool = typer.Option(False, "--continuous", "-c", help="Run forever, polling for new jobs."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting."),
     headless: bool = typer.Option(False, "--headless", help="Run browsers in headless mode."),
