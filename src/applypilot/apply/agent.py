@@ -93,14 +93,29 @@ async def run_antigravity_agent(
         or None
     )
 
-    agent_config = LocalAgentConfig(
-        model=model_name,
-        api_key=gemini_key,
-        mcp_servers=mcp_servers,
-        safety_policy=[
-            policy.allow_all(),
-        ],
-    )
+    if gemini_key:
+        agent_config = LocalAgentConfig(
+            model=model_name,
+            api_key=gemini_key,
+            mcp_servers=mcp_servers,
+            safety_policy=[
+                policy.allow_all(),
+            ],
+        )
+    else:
+        # Authenticate via signed-in Google Account (gcloud ADC / Vertex AI)
+        project = os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("GCP_PROJECT") or "default"
+        location = os.environ.get("GOOGLE_CLOUD_LOCATION") or "us-central1"
+        agent_config = LocalAgentConfig(
+            model=model_name,
+            vertex=True,
+            project=project,
+            location=location,
+            mcp_servers=mcp_servers,
+            safety_policy=[
+                policy.allow_all(),
+            ],
+        )
 
     action_count = 0
     output_text = ""
