@@ -71,6 +71,7 @@ async def run_antigravity_agent(
     viewport_size = config.DEFAULTS.get("viewport", "1280x900")
     mcp_servers = [
         types.McpStdioServer(
+            name="playwright",
             command="npx",
             args=[
                 "-y",
@@ -80,13 +81,21 @@ async def run_antigravity_agent(
             ],
         ),
         types.McpStdioServer(
+            name="gmail",
             command="npx",
             args=["-y", "@gongrzhe/server-gmail-autoauth-mcp"],
         ),
     ]
 
+    gemini_key = (
+        os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("GOOGLE_API_KEY")
+        or None
+    )
+
     agent_config = LocalAgentConfig(
         model=model_name,
+        api_key=gemini_key,
         mcp_servers=mcp_servers,
         safety_policy=[
             policy.allow_all(),
