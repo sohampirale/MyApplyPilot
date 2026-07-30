@@ -391,21 +391,13 @@ def doctor() -> None:
                         "Set GEMINI_API_KEY in ~/.applypilot/.env (run 'applypilot init')"))
 
     # --- Tier 3 checks ---
-    # browser-use package
+    # google-antigravity package
     try:
-        import browser_use  # noqa: F401
-        results.append(("browser-use", ok_mark, "Browser automation agent available"))
+        import google.antigravity  # noqa: F401
+        results.append(("google-antigravity", ok_mark, "Google Antigravity SDK available"))
     except ImportError:
-        results.append(("browser-use", fail_mark,
-                        "pip install browser-use langchain-openai (needed for auto-apply)"))
-
-    # langchain-openai package
-    try:
-        import langchain_openai  # noqa: F401
-        results.append(("langchain-openai", ok_mark, "LLM integration for browser agent"))
-    except ImportError:
-        results.append(("langchain-openai", fail_mark,
-                        "pip install langchain-openai (needed for auto-apply)"))
+        results.append(("google-antigravity", fail_mark,
+                        "pip install google-antigravity (needed for auto-apply)"))
 
     # Chrome
     try:
@@ -441,9 +433,9 @@ def doctor() -> None:
 
     if tier == 1:
         console.print("[dim]  → Tier 2 unlocks: scoring, tailoring, cover letters (needs LLM API key)[/dim]")
-        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs browser-use + Chrome)[/dim]")
+        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs google-antigravity + Chrome)[/dim]")
     elif tier == 2:
-        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs browser-use + Chrome)[/dim]")
+        console.print("[dim]  → Tier 3 unlocks: auto-apply (needs google-antigravity + Chrome)[/dim]")
 
     console.print()
 

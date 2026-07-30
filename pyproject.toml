@@ -26,8 +26,8 @@ dependencies = [
     "python-dotenv>=1.0",
     "pyyaml>=6.0",
     "pandas>=2.0",
-    "browser-use>=0.2",
-    "langchain-openai>=0.3",
+    "google-antigravity>=0.1.9",
+    "protobuf>=7.35.0",
     ]
 
 [project.optional-dependencies]

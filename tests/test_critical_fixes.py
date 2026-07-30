@@ -4,13 +4,12 @@ import pytest
 import os
 
 
-def test_c1_browser_use_imports():
-    """C1: Verify browser_use import and Browser cdp_url init in agent.py."""
-    from applypilot.apply.agent import run_browser_agent
-    from browser_use import Agent, Browser
-    # Verify Browser accepts cdp_url without error
-    b = Browser(cdp_url="http://localhost:9222")
-    assert b is not None
+def test_c1_antigravity_sdk_imports():
+    """C1: Verify google.antigravity SDK import and Agent components in agent.py."""
+    from applypilot.apply.agent import run_antigravity_agent, run_agent_sync
+    from google.antigravity import Agent, LocalAgentConfig, types, policy
+    assert Agent is not None
+    assert LocalAgentConfig is not None
 
 
 def test_c2_location_filter_empty_whitelist():

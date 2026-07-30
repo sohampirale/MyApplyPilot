@@ -305,25 +305,25 @@ def _setup_ai_features() -> None:
 # ---------------------------------------------------------------------------
 
 def _setup_auto_apply() -> None:
-    """Configure autonomous job application (requires browser-use + Chrome)."""
+    """Configure autonomous job application (requires google-antigravity + Chrome)."""
     console.print(Panel(
         "[bold]Step 5: Auto-Apply (optional)[/bold]\n"
         "ApplyPilot can autonomously fill and submit job applications\n"
-        "using browser-use and DeepSeek as the browser agent."
+        "using Google Antigravity SDK as the browser agent."
     ))
 
     if not Confirm.ask("Enable autonomous job applications?", default=True):
         console.print("[dim]You can apply manually using the tailored resumes ApplyPilot generates.[/dim]")
         return
 
-    # Check for browser-use
+    # Check for google-antigravity
     try:
-        import browser_use  # noqa: F401
-        console.print("[green]browser-use agent detected.[/green]")
+        import google.antigravity  # noqa: F401
+        console.print("[green]Google Antigravity SDK detected.[/green]")
     except ImportError:
         console.print(
-            "[yellow]browser-use not installed.[/yellow]\n"
-            "Install it via: [bold]pip install browser-use langchain-openai[/bold]\n"
+            "[yellow]google-antigravity not installed.[/yellow]\n"
+            "Install it via: [bold]pip install google-antigravity[/bold]\n"
         )
 
     # Optional: CapSolver for CAPTCHAs

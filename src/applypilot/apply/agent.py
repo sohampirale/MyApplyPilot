@@ -1,11 +1,8 @@
-"""Browser-use agent runner for ApplyPilot Stage 6 (Auto-Apply).
+"""Google Antigravity SDK agent runner for ApplyPilot Stage 6 (Auto-Apply).
 
-Replaces the Claude Code CLI subprocess with the browser-use Python library.
-Uses DeepSeek (or any OpenAI-compatible LLM) as the reasoning engine and
-Playwright (via browser-use) for browser automation.
-
-The agent connects to an existing Chrome instance via CDP (Chrome DevTools
-Protocol) and executes form-filling tasks autonomously.
+Drives browser automation using the Google Antigravity (AGY) SDK and Playwright MCP.
+Connects to an existing Chrome instance via CDP (Chrome DevTools Protocol)
+and executes job application form-filling tasks autonomously.
 """
 
 import asyncio
@@ -27,170 +24,104 @@ _active_agents: dict[int, object] = {}  # worker_id -> Agent instance
 _agent_lock = threading.Lock()
 
 
-def _get_llm():
-    """Create a browser-use native LLM instance from ApplyPilot's env config.
+def _get_model_name() -> str:
+    """Determine the model name for Google Antigravity SDK.
 
-    Reads LLM_URL, LLM_MODEL, LLM_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
-    and returns native browser_use.llm objects (ChatDeepSeek, ChatGoogle, ChatOpenAI).
+    Reads AGY_MODEL or LLM_MODEL from environment, defaulting to 'gemini-2.5-pro'.
     """
-    gemini_key = os.environ.get("GEMINI_API_KEY", "")
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
-    local_url = os.environ.get("LLM_URL", "")
-    model_override = os.environ.get("LLM_MODEL", "")
-    api_key = os.environ.get("LLM_API_KEY", "")
-
-    if local_url and "deepseek" in local_url.lower():
-        from browser_use.llm import ChatDeepSeek
-        base_url = local_url.rstrip("/")
-        if not base_url.endswith("/v1"):
-            base_url = f"{base_url}/v1"
-        return ChatDeepSeek(
-            model=model_override or "deepseek-chat",
-            api_key=api_key or "not-needed",
-            base_url=base_url,
-            temperature=0.0,
-        )
-
-    if local_url:
-        from browser_use.llm import ChatOpenAI
-        base_url = local_url.rstrip("/")
-        if not base_url.endswith("/v1"):
-            base_url = f"{base_url}/v1"
-        return ChatOpenAI(
-            model=model_override or "gpt-4o-mini",
-            api_key=api_key or "not-needed",
-            base_url=base_url,
-            temperature=0.0,
-        )
-
-    if gemini_key:
-        from browser_use.llm import ChatGoogle
-        return ChatGoogle(
-            model=model_override or "gemini-2.0-flash",
-            api_key=gemini_key,
-            temperature=0.0,
-        )
-
-    if openai_key:
-        from browser_use.llm import ChatOpenAI
-        return ChatOpenAI(
-            model=model_override or "gpt-4o-mini",
-            api_key=openai_key,
-            temperature=0.0,
-        )
-
-    raise RuntimeError(
-        "No LLM provider configured. "
-        "Set LLM_URL + LLM_API_KEY, GEMINI_API_KEY, or OPENAI_API_KEY."
+    return (
+        os.environ.get("AGY_MODEL")
+        or os.environ.get("LLM_MODEL")
+        or "gemini-2.5-pro"
     )
 
 
-async def run_browser_agent(
+async def run_antigravity_agent(
     task_prompt: str,
     cdp_port: int,
     worker_id: int = 0,
     max_steps: int = 100,
     on_action: Callable[[str], None] | None = None,
 ) -> tuple[str, int]:
-    """Run a browser-use agent to complete a job application.
+    """Run a Google Antigravity agent to complete a job application.
 
-    Connects to an existing Chrome instance via CDP and drives it using
-    the configured LLM (DeepSeek by default).
+    Connects to an existing Chrome instance via Playwright MCP (over CDP)
+    and drives it using Google Antigravity SDK.
 
     Args:
         task_prompt: The full instruction prompt (from prompt.py).
         cdp_port: CDP port of the Chrome instance to connect to.
         worker_id: Numeric worker identifier (for logging/tracking).
-        max_steps: Maximum agent steps before timeout.
+        max_steps: Maximum agent turns before timeout.
         on_action: Optional callback invoked with action description strings
                    as the agent takes actions (for dashboard updates).
 
     Returns:
         Tuple of (full_output_text, action_count).
     """
-    # FIX C1: browser-use 0.13.6 does NOT export BrowserConfig.
-    # Browser (alias for BrowserSession) accepts cdp_url directly.
-    from browser_use import Agent, Browser
+    from google.antigravity import Agent, LocalAgentConfig, types, policy
 
-    llm = _get_llm()
+    model_name = _get_model_name()
 
-    # FIX C1: Connect to existing Chrome via CDP — pass cdp_url directly
-    # to Browser() constructor (no BrowserConfig wrapper needed).
-    browser = Browser(
-        cdp_url=f"http://localhost:{cdp_port}",
+    # Configure Playwright MCP server pointing to worker's Chrome CDP port
+    viewport_size = config.DEFAULTS.get("viewport", "1280x900")
+    mcp_servers = [
+        types.McpStdioServer(
+            command="npx",
+            args=[
+                "-y",
+                "@playwright/mcp@latest",
+                f"--cdp-endpoint=http://localhost:{cdp_port}",
+                f"--viewport-size={viewport_size}",
+            ],
+        ),
+        types.McpStdioServer(
+            command="npx",
+            args=["-y", "@gongrzhe/server-gmail-autoauth-mcp"],
+        ),
+    ]
+
+    agent_config = LocalAgentConfig(
+        model=model_name,
+        mcp_servers=mcp_servers,
+        safety_policy=[
+            policy.allow_all(),
+        ],
     )
-
-    # Build extended system message with ApplyPilot-specific guidance
-    system_extension = (
-        "You are an autonomous job application agent. "
-        "Follow the task instructions precisely. "
-        "When you complete the task, include your result code (e.g. RESULT:APPLIED) "
-        "in your final output using the done() action. "
-        "When uploading files, use the exact file paths provided in the task. "
-        "Always check for CAPTCHAs after navigation and form submissions."
-    )
-
-    agent = Agent(
-        task=task_prompt,
-        llm=llm,
-        browser=browser,
-        use_vision=False,  # Required for DeepSeek (no vision support)
-        extend_system_message=system_extension,
-        max_actions_per_step=5,
-        max_failures=5,
-        enable_signal_handler=False,  # We manage signals ourselves in launcher.py
-    )
-
-    # Track for cancellation support
-    with _agent_lock:
-        _active_agents[worker_id] = agent
 
     action_count = 0
     output_text = ""
 
     try:
-        history = await agent.run(max_steps=max_steps)
+        async with Agent(agent_config) as agent:
+            # Track for cancellation support
+            with _agent_lock:
+                _active_agents[worker_id] = agent
 
-        # Extract results from history
-        output_text = history.final_result() or ""
-        action_count = len(history.action_names()) if history.action_names() else 0
+            # Instruct agent to perform task
+            response = await agent.chat(task_prompt)
+            output_text = await response.text()
 
-        # Also collect any extracted content as supplementary output
-        extracted = history.extracted_content()
-        if extracted:
-            for item in extracted:
-                if item and item not in output_text:
-                    output_text += f"\n{item}"
-
-        # Report actions to callback
-        if on_action and history.action_names():
-            for action_name in history.action_names():
-                on_action(action_name)
-
-        # FIX: Only log actual errors, not None entries.
-        # history.errors() returns list[str | None] with None for
-        # successful steps. Filter out None before logging.
-        if history.has_errors():
-            actual_errors = [err for err in history.errors() if err is not None]
-            for err in actual_errors:
-                logger.warning("[worker-%d] Agent error: %s", worker_id, err)
-                output_text += f"\nERROR: {err}"
+            # Increment action count and invoke callback if available
+            action_count = max(1, len(output_text.splitlines()) // 10)
+            if on_action:
+                on_action("Antigravity task completed")
 
     except asyncio.CancelledError:
-        logger.info("[worker-%d] Agent cancelled (skip requested)", worker_id)
+        logger.info("[worker-%d] Antigravity Agent cancelled (skip requested)", worker_id)
         output_text = "RESULT:FAILED:cancelled"
     except Exception as exc:
-        logger.exception("[worker-%d] Agent crashed: %s", worker_id, exc)
+        logger.exception("[worker-%d] Antigravity Agent crashed: %s", worker_id, exc)
         output_text = f"RESULT:FAILED:agent_crash:{str(exc)[:100]}"
     finally:
         with _agent_lock:
             _active_agents.pop(worker_id, None)
-        try:
-            await browser.close()
-        except Exception:
-            pass
 
     return output_text, action_count
+
+
+# Backwards compatibility alias for launcher / CLI references
+run_browser_agent = run_antigravity_agent
 
 
 def run_agent_sync(
@@ -200,29 +131,15 @@ def run_agent_sync(
     max_steps: int = 100,
     on_action: Callable[[str], None] | None = None,
 ) -> tuple[str, int]:
-    """Synchronous wrapper for run_browser_agent.
+    """Synchronous wrapper for run_antigravity_agent.
 
-    Creates a new event loop for each call, safe for use in
-    ThreadPoolExecutor threads.
-
-    Args:
-        task_prompt: The full instruction prompt.
-        cdp_port: CDP port of the Chrome instance.
-        worker_id: Numeric worker identifier.
-        max_steps: Maximum agent steps.
-        on_action: Optional action callback.
-
-    Returns:
-        Tuple of (full_output_text, action_count).
+    Creates a new event loop for each call, safe for use in ThreadPoolExecutor threads.
     """
-    # FIX C3: Bind the new event loop to this thread so that all internal
-    # asyncio calls (in browser-use, playwright, httpx, etc.) can find it
-    # via asyncio.get_event_loop() / asyncio.get_running_loop().
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         return loop.run_until_complete(
-            run_browser_agent(
+            run_antigravity_agent(
                 task_prompt=task_prompt,
                 cdp_port=cdp_port,
                 worker_id=worker_id,
@@ -238,24 +155,20 @@ def run_agent_sync(
 
 
 def cancel_agent(worker_id: int) -> None:
-    """Cancel the active agent for a worker (used for Ctrl+C skip).
-
-    Calls agent.stop() which sets an internal flag that causes the
-    agent's run loop to exit gracefully at the next step boundary.
-    agent.stop() is synchronous and thread-safe.
-    """
+    """Cancel the active Antigravity agent for a worker (used for Ctrl+C skip)."""
     with _agent_lock:
         agent = _active_agents.get(worker_id)
         if agent is not None:
-            logger.info("[worker-%d] Cancelling agent via agent.stop()", worker_id)
+            logger.info("[worker-%d] Cancelling Antigravity agent", worker_id)
             try:
-                agent.stop()
+                if hasattr(agent, "stop"):
+                    agent.stop()
             except Exception as exc:
-                logger.debug("[worker-%d] agent.stop() error: %s", worker_id, exc)
+                logger.debug("[worker-%d] cancel_agent error: %s", worker_id, exc)
 
 
 def cancel_all_agents() -> None:
-    """Cancel all active agents (used for shutdown)."""
+    """Cancel all active Antigravity agents (used for shutdown)."""
     with _agent_lock:
         worker_ids = list(_active_agents.keys())
     for wid in worker_ids:

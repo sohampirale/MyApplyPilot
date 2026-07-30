@@ -252,9 +252,9 @@ def check_tier(required: int, feature: str) -> None:
         missing.append("LLM API key — run [bold]applypilot init[/bold] or set GEMINI_API_KEY")
     if required >= 3:
         try:
-            import browser_use  # noqa: F401
+            import google.antigravity  # noqa: F401
         except ImportError:
-            missing.append("browser-use — run [bold]pip install browser-use langchain-openai[/bold]")
+            missing.append("google-antigravity — run [bold]pip install google-antigravity[/bold]")
         try:
             get_chrome_path()
         except FileNotFoundError:
