@@ -72,13 +72,13 @@ def generate_dashboard(output_path: str | None = None) -> str:
         FROM jobs GROUP BY site ORDER BY high_fit DESC, total DESC
     """).fetchall()
 
-    # All scored jobs (5+), ordered by score desc
+    # All scored jobs (1+), ordered by score desc
     jobs = conn.execute("""
         SELECT url, title, salary, description, location, site, strategy,
                full_description, application_url, detail_error,
                fit_score, score_reasoning
         FROM jobs
-        WHERE fit_score >= 5
+        WHERE fit_score >= 1
         ORDER BY fit_score DESC, site, title
     """).fetchall()
 
@@ -132,10 +132,11 @@ def generate_dashboard(output_path: str | None = None) -> str:
         if score != current_score:
             if current_score is not None:
                 job_sections += "</div>"
-            score_color = "#10b981" if score >= 7 else "#f59e0b"
+            score_color = "#10b981" if score >= 7 else ("#f59e0b" if score >= 5 else "#ef4444")
             score_label = {
                 10: "Perfect Match", 9: "Excellent Fit", 8: "Strong Fit",
                 7: "Good Fit", 6: "Moderate+", 5: "Moderate",
+                4: "Low-Moderate", 3: "Low Fit", 2: "Weak Match", 1: "Poor Fit",
             }.get(score, f"Score {score}")
             count_at_score = score_dist.get(score, 0)
             job_sections += f"""
