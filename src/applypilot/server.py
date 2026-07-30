@@ -69,16 +69,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
             if not resume_path and job_dict.get("full_description"):
                 try:
+                    import re
                     from applypilot.scoring.tailor import tailor_resume, load_profile, RESUME_PATH, TAILORED_DIR
+                    from applypilot.scoring.pdf import convert_to_pdf
                     profile = load_profile()
                     resume_text = RESUME_PATH.read_text(encoding="utf-8")
                     TAILORED_DIR.mkdir(parents=True, exist_ok=True)
                     tailored, report = tailor_resume(resume_text, job_dict, profile)
-                    if tailored and report.get("status") in ("APPROVED", "APPROVED_WITH_JUDGE_WARNING"):
-                        clean_site = (job_dict.get("site") or "job").replace(" ", "_")
-                        clean_title = (job_dict.get("title") or "role").replace(" ", "_").replace("/", "_")[:30]
-                        res_file = TAILORED_DIR / f"{clean_site}_{clean_title}.pdf"
-                        resume_path = res_file.as_posix()
+                    status = (report.get("status") or "").lower()
+                    if tailored and status in ("approved", "approved_with_judge_warning"):
+                        safe_title = re.sub(r"[^\w\s-]", "", job_dict.get("title") or "job")[:50].strip().replace(" ", "_")
+                        safe_site = re.sub(r"[^\w\s-]", "", job_dict.get("site") or "site")[:20].strip().replace(" ", "_")
+                        prefix = f"{safe_site}_{safe_title}"
+                        txt_path = TAILORED_DIR / f"{prefix}.txt"
+                        txt_path.write_text(tailored, encoding="utf-8")
+                        try:
+                            resume_path = str(convert_to_pdf(txt_path))
+                        except Exception:
+                            resume_path = str(txt_path)
                         conn.execute("UPDATE jobs SET tailored_resume_path = ? WHERE url = ?", (resume_path, job_url))
                         conn.commit()
                 except Exception as e:
