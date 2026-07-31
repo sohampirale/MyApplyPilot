@@ -204,7 +204,8 @@ def _setup_searches() -> None:
     """Generate a searches.yaml from user input."""
     console.print(Panel("[bold]Step 3: Job Search Config[/bold]\nDefine what you're looking for."))
 
-    location = Prompt.ask("Target location (e.g. 'Remote', 'Canada', 'New York, NY')", default="Remote")
+    country = Prompt.ask("Target country", default="india")
+    location = Prompt.ask("Target location (e.g. 'Bengaluru, Karnataka', 'Remote India', 'Hyderabad')", default="Bengaluru, Karnataka")
     distance_str = Prompt.ask("Search radius in miles (0 for remote-only)", default="0")
     try:
         distance = int(distance_str)
@@ -212,28 +213,71 @@ def _setup_searches() -> None:
         distance = 0
 
     roles_raw = Prompt.ask(
-        "Target job titles (comma-separated, e.g. 'Backend Engineer, Full Stack Developer')"
+        "Target job titles (comma-separated)",
+        default="Software Engineer Intern, Graduate Engineer Trainee, SDE 1, Off Campus Software Engineer 2026, Associate Software Engineer"
     )
     roles = [r.strip() for r in roles_raw.split(",") if r.strip()]
 
     if not roles:
-        console.print("[yellow]No roles provided. Using a default set.[/yellow]")
-        roles = ["Software Engineer"]
+        console.print("[yellow]No roles provided. Using India student default set.[/yellow]")
+        roles = [
+            "Software Engineer Intern",
+            "Graduate Engineer Trainee",
+            "SDE 1",
+            "Off Campus Software Engineer 2026",
+            "Associate Software Engineer",
+        ]
 
     # Build YAML content
     lines = [
         "# ApplyPilot search configuration",
         "# Edit this file to refine your job search queries.",
         "",
+        f'country: "{country}"',
+        f'country_indeed: "{country}"',
+        "",
         "defaults:",
+        f'  country: "{country}"',
+        f'  country_indeed: "{country}"',
         f'  location: "{location}"',
         f"  distance: {distance}",
         "  hours_old: 72",
         "  results_per_site: 50",
         "",
+        "boards:",
+        "  - naukri",
+        "  - linkedin",
+        "  - indeed",
+        "  - glassdoor",
+        "  - google",
+        "",
         "locations:",
         f'  - location: "{location}"',
         f"    remote: {str(distance == 0).lower()}",
+        "  - location: \"Hyderabad, Telangana\"",
+        "  - location: \"Pune, Maharashtra\"",
+        "  - location: \"Gurugram, Haryana\"",
+        "  - location: \"Remote India\"",
+        "    remote: true",
+        "",
+        "location:",
+        "  accept_patterns:",
+        "    - \"Bengaluru\"",
+        "    - \"Bangalore\"",
+        "    - \"Hyderabad\"",
+        "    - \"Pune\"",
+        "    - \"Gurugram\"",
+        "    - \"Gurgaon\"",
+        "    - \"Noida\"",
+        "    - \"Mumbai\"",
+        "    - \"Chennai\"",
+        "    - \"India\"",
+        "    - \"Remote\"",
+        "  reject_patterns:",
+        "    - \"United States\"",
+        "    - \"USA\"",
+        "    - \"Canada\"",
+        "    - \"London, UK\"",
         "",
         "queries:",
     ]

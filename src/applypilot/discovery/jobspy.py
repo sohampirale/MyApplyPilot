@@ -215,6 +215,12 @@ def _run_one_search(
 
     all_dfs = []
 
+    country_indeed = (
+        defaults.get("country_indeed")
+        or defaults.get("country")
+        or "india"
+    )
+
     # Run non-Glassdoor sites with original location
     if other_sites:
         kwargs = {
@@ -224,7 +230,7 @@ def _run_one_search(
             "results_wanted": results_per_site,
             "hours_old": hours_old,
             "description_format": "markdown",
-            "country_indeed": defaults.get("country_indeed", "usa"),
+            "country_indeed": country_indeed,
             "verbose": 0,
         }
         if s.get("remote"):
@@ -303,11 +309,11 @@ def search_jobs(
     results_per_site: int = 50,
     hours_old: int = 72,
     proxy: str | None = None,
-    country_indeed: str = "usa",
+    country_indeed: str = "india",
 ) -> dict:
     """Run a single job search via JobSpy and store results in DB."""
     if sites is None:
-        sites = ["indeed", "linkedin", "zip_recruiter"]
+        sites = ["naukri", "linkedin", "indeed", "glassdoor"]
 
     proxy_config = parse_proxy(proxy) if proxy else None
 
@@ -375,7 +381,7 @@ def _full_crawl(
 ) -> dict:
     """Run all search queries from search config across all locations."""
     if sites is None:
-        sites = ["indeed", "linkedin", "zip_recruiter"]
+        sites = search_cfg.get("boards") or search_cfg.get("sites") or ["naukri", "linkedin", "indeed", "glassdoor"]
 
     # Build search combinations from config
     queries = search_cfg.get("queries", [])

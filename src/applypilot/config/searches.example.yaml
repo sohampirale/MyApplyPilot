@@ -1,100 +1,106 @@
-# ApplyPilot search configuration
+# ApplyPilot search configuration -- India Student & Entry-Level Default
 # Copy to ~/.applypilot/searches.yaml and customize for your job search.
 # The wizard (applypilot init) generates a basic version automatically.
 
+# Country for Indeed/LinkedIn/Glassdoor/Naukri searches
+country: "india"
+country_indeed: "india"
+
 # Search queries -- each has a query string and priority tier.
-# Tier 1: High-priority exact matches (searched first, highest precision)
-# Tier 2: Strong matches, broader scope
-# Tier 3: Wide net, high volume, lower precision
+# Tier 1: Student & Fresher High-Priority Roles
+# Tier 2: Core Engineering & Tech Roles
+# Tier 3: General & Off-Campus Roles
 queries:
-  - query: "software engineer"
+  - query: "Software Engineer Intern"
     tier: 1
-  - query: "backend engineer"
+  - query: "Graduate Engineer Trainee"
     tier: 1
-  - query: "backend developer"
+  - query: "SDE 1"
     tier: 1
-  - query: "full stack developer"
+  - query: "Off Campus Software Engineer 2026"
+    tier: 1
+  - query: "Associate Software Engineer"
+    tier: 1
+  - query: "Junior Software Engineer"
     tier: 2
-  - query: "full stack engineer"
+  - query: "Junior Backend Developer"
     tier: 2
-  - query: "python developer"
+  - query: "Python Developer"
     tier: 2
-  - query: "python engineer"
+  - query: "Frontend Developer"
     tier: 2
-  - query: "DevOps engineer"
+  - query: "Full Stack Developer"
     tier: 2
-  - query: "site reliability engineer"
+  - query: "Data Engineer"
     tier: 2
-  - query: "platform engineer"
+  - query: "DevOps Engineer"
     tier: 2
-  - query: "cloud engineer"
-    tier: 2
-  - query: "data engineer"
-    tier: 2
-  - query: "infrastructure engineer"
-    tier: 2
-  - query: "software developer"
+  - query: "Software Engineer"
     tier: 3
-  - query: "developer"
+  - query: "Backend Engineer"
     tier: 3
-  - query: "systems engineer"
+  - query: "QA Engineer"
     tier: 3
-  - query: "automation engineer"
-    tier: 3
-  - query: "solutions engineer"
-    tier: 3
-  - query: "integration engineer"
-    tier: 3
-  - query: "ML engineer"
-    tier: 3
-  - query: "machine learning engineer"
-    tier: 3
-  - query: "AI engineer"
-    tier: 3
-  - query: "security engineer"
+  - query: "AI / ML Engineer"
     tier: 3
 
-# Locations to search
+# Locations to search across Indian Tech Hubs
 locations:
-  - location: "San Francisco, CA"
+  - location: "Bengaluru, Karnataka"
     remote: false
-  - location: "Remote"
+  - location: "Hyderabad, Telangana"
+    remote: false
+  - location: "Pune, Maharashtra"
+    remote: false
+  - location: "Gurugram, Haryana"
+    remote: false
+  - location: "Noida, Uttar Pradesh"
+    remote: false
+  - location: "Mumbai, Maharashtra"
+    remote: false
+  - location: "Chennai, Tamil Nadu"
+    remote: false
+  - location: "Remote India"
     remote: true
 
 # Location filtering -- accept/reject patterns for job location text
 location:
   accept_patterns:
-    - "San Francisco"
-    - "Bay Area"
-    - "SF"
-    - "California"
-    - "CA"
+    - "Bengaluru"
+    - "Bangalore"
+    - "Hyderabad"
+    - "Pune"
+    - "Gurugram"
+    - "Gurgaon"
+    - "Noida"
+    - "Mumbai"
+    - "Chennai"
+    - "Delhi"
+    - "NCR"
+    - "India"
     - "Remote"
     - "Anywhere"
+  reject_patterns:
     - "United States"
     - "US"
     - "USA"
-  reject_patterns:
-    - "New York only"
-    - "Seattle only"
-    - "onsite only"
+    - "Canada"
     - "London, UK"
-    - "India"
-    - "Philippines"
+    - "United Kingdom"
+    - "Europe"
 
-# Country for Indeed/LinkedIn/Google Jobs searches
-country: "USA"
-
-# JobSpy source boards (all available options shown)
+# JobSpy source boards (Naukri, LinkedIn, Indeed, Glassdoor, Google)
 boards:
-  - indeed
+  - naukri
   - linkedin
+  - indeed
   - glassdoor
-  - zip_recruiter
   - google
 
 # Search defaults
 defaults:
+  country: "india"
+  country_indeed: "india"
   results_per_site: 100  # Max results per board per query
   hours_old: 72          # Only jobs posted within this many hours
 
@@ -104,9 +110,10 @@ exclude_titles:
   - "VP "
   - "vice president"
   - "chief"
-  - "intern"
-  - "internship"
-  - "co-op"
+  - "principal engineer"
+  - "staff engineer"
+  - "lead engineer"
+  - "engineering manager"
   - "clearance required"
   - "TS/SCI"
-  - "principal scientist"
+
