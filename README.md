@@ -60,14 +60,14 @@ Runs stages 1-5: discovers jobs, scores them, tailors your resume, generates cov
 
 | Stage | What Happens |
 |-------|-------------|
-| **1. Discover** | Scrapes 5 job boards (Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google Jobs) + 48 Workday employer portals + 30 direct career sites |
+| **1. Discover** | Scrapes 5+ job boards (Naukri India, LinkedIn India, Indeed India, Glassdoor, Google Jobs) + Playwright SmartExtract targets (Instahyre, Unstop, Hirist, Cutshort, Foundit, Wellfound, Internshala) + 48 Workday employer portals |
 | **2. Enrich** | Fetches full job descriptions via JSON-LD, CSS selectors, or AI-powered extraction |
 | **3. Score** | AI rates every job 1-10 based on your resume and preferences. Only high-fit jobs proceed |
 | **4. Tailor** | AI rewrites your resume per job: reorganizes, emphasizes relevant experience, adds keywords. Never fabricates |
 | **5. Cover Letter** | AI generates a targeted cover letter per job |
-| **6. Auto-Apply** | Claude Code navigates application forms, fills fields, uploads documents, answers questions, and submits |
+| **6. Auto-Apply** | Claude Code navigates application forms, fills fields, uploads documents, answers questions (Notice Period, Expected CTC in LPA, CGPA), and submits |
 
-Each stage is independent. Run them all or pick what you need.
+Each stage is independent. For detailed multi-agent documentation, see [AGENTS.md](AGENTS.md).
 
 ---
 
@@ -75,11 +75,11 @@ Each stage is independent. Run them all or pick what you need.
 
 | Feature | ApplyPilot | AIHawk | Manual |
 |---------|-----------|--------|--------|
-| Job discovery | 5 boards + Workday + direct sites | LinkedIn only | One board at a time |
+| Job discovery | Naukri, LinkedIn India, Indeed, Unstop, Instahyre, Hirist, Cutshort, Workday | LinkedIn only | One board at a time |
 | AI scoring | 1-10 fit score per job | Basic filtering | Your gut feeling |
 | Resume tailoring | Per-job AI rewrite | Template-based | Hours per application |
 | Auto-apply | Full form navigation + submission | LinkedIn Easy Apply only | Click, type, repeat |
-| Supported sites | Indeed, LinkedIn, Glassdoor, ZipRecruiter, Google Jobs, 46 Workday portals, 28 direct sites | LinkedIn | Whatever you open |
+| Supported sites | Naukri, LinkedIn, Indeed, Glassdoor, Instahyre, Unstop, Hirist, Cutshort, Foundit, Wellfound, Workday GCCs | LinkedIn | Whatever you open |
 | License | AGPL-3.0 | MIT | N/A |
 
 ---
