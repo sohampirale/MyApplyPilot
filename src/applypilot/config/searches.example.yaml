@@ -63,6 +63,17 @@ locations:
   - location: "Remote India"
     remote: true
 
+# Glassdoor location mappings
+glassdoor_location_map:
+  "Bengaluru, Karnataka": "Bengaluru"
+  "Hyderabad, Telangana": "Hyderabad"
+  "Pune, Maharashtra": "Pune"
+  "Gurugram, Haryana": "Gurgaon"
+  "Noida, Uttar Pradesh": "Noida"
+  "Mumbai, Maharashtra": "Mumbai"
+  "Chennai, Tamil Nadu": "Chennai"
+  "Remote India": "India"
+
 # Location filtering -- accept/reject patterns for job location text
 location:
   accept_patterns:
