@@ -36,6 +36,14 @@ blocked_sso:
 # Used by detail enrichment to resolve relative URLs scraped from sites.
 # Sites not listed here (or with null) cannot have relative URLs resolved.
 base_urls:
+  "Naukri India": "https://www.naukri.com"
+  "Instahyre": "https://www.instahyre.com"
+  "Unstop Jobs": "https://unstop.com"
+  "Hirist": "https://www.hirist.tech"
+  "Cutshort": "https://cutshort.io"
+  "Foundit India": "https://www.foundit.in"
+  "Wellfound India": "https://wellfound.com"
+  "Internshala Freshers": "https://internshala.com"
   "Job Bank Canada": "https://www.jobbank.gc.ca"
   "CareerJet Canada": "https://www.careerjet.ca"
   "BuiltIn Remote": "https://builtin.com"
@@ -54,10 +62,37 @@ base_urls:
   "Randstad Canada": "https://www.randstad.ca/jobs/search/"
 
 sites:
-  # ── Searchable sites (URL includes query + location params) ──────────
-  # Canada-specific
-  - name: "Eluta"
-    url: "https://www.eluta.ca/search?q={query_encoded}&l={location_encoded}"
+  # ── Indian Tech & Fresher Search Portals (Playwright SmartExtract) ───
+  - name: "Naukri India"
+    url: "https://www.naukri.com/{query_encoded}-jobs-in-{location_encoded}"
+    type: search
+
+  - name: "Instahyre"
+    url: "https://www.instahyre.com/search-jobs/?query={query_encoded}&location={location_encoded}"
+    type: search
+
+  - name: "Unstop Jobs"
+    url: "https://unstop.com/jobs?searchTerm={query_encoded}"
+    type: search
+
+  - name: "Hirist"
+    url: "https://www.hirist.tech/search/{query_encoded}-0-0-0.html"
+    type: search
+
+  - name: "Cutshort"
+    url: "https://cutshort.io/jobs/{query_encoded}-jobs-in-{location_encoded}"
+    type: search
+
+  - name: "Foundit India"
+    url: "https://www.foundit.in/srp/results?query={query_encoded}&locations={location_encoded}"
+    type: search
+
+  - name: "Wellfound India"
+    url: "https://wellfound.com/role/l/software-engineer/india"
+    type: static
+
+  - name: "Internshala Freshers"
+    url: "https://internshala.com/fresher-jobs/keywords-{query_encoded}/"
     type: search
 
   - name: "Talent.com"
