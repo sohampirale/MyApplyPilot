@@ -11,11 +11,15 @@ import re
 import time
 from datetime import datetime, timezone
 
+from rich.console import Console
+from rich.table import Table
+
 from applypilot.config import RESUME_PATH, load_profile
 from applypilot.database import get_connection, get_jobs_by_stage
 from applypilot.llm import get_client
 
 log = logging.getLogger(__name__)
+console = Console()
 
 
 # ── Scoring Prompt ────────────────────────────────────────────────────────
@@ -152,6 +156,19 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
             completed, len(jobs), result["score"], job.get("title", "?")[:60],
         )
 
+        # Every 100 jobs, log a progress summary
+        if completed % 100 == 0:
+            elapsed_so_far = time.time() - t0
+            rate = completed / elapsed_so_far if elapsed_so_far > 0 else 0
+            remaining = len(jobs) - completed
+            eta_min = (remaining / rate / 60) if rate > 0 else 0
+            high_scores = sum(1 for r in results if r['score'] >= 7)
+            log.info(
+                'Progress: %d/%d (%.0f%%) | %.1f jobs/sec | ETA: %.0f min | Score>=7: %d',
+                completed, len(jobs), completed / len(jobs) * 100,
+                rate, eta_min, high_scores,
+            )
+
     # Write scores to DB
     now = datetime.now(timezone.utc).isoformat()
     for r in results:
@@ -171,6 +188,43 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
         GROUP BY fit_score ORDER BY fit_score DESC
     """).fetchall()
     distribution = [(row[0], row[1]) for row in dist]
+
+    # Render score distribution summary table
+    if distribution:
+        table = Table(title='Fit Scoring Summary', show_header=True, header_style='bold')
+        table.add_column('Score Tier', style='bold')
+        table.add_column('Count', justify='right')
+        table.add_column('Action', style='dim')
+        
+        # Group scores into tiers
+        perfect = sum(c for s, c in distribution if s >= 9)
+        strong = sum(c for s, c in distribution if 7 <= s <= 8)
+        moderate = sum(c for s, c in distribution if 5 <= s <= 6)
+        weak = sum(c for s, c in distribution if s <= 4)
+        
+        if perfect:
+            table.add_row('[green]9-10 (Perfect)[/green]', str(perfect), 'Resume tailoring')
+        if strong:
+            table.add_row('[green]7-8 (Strong)[/green]', str(strong), 'Resume tailoring')
+        if moderate:
+            table.add_row('[yellow]5-6 (Moderate)[/yellow]', str(moderate), 'Saved (skipped tailoring)')
+        if weak:
+            table.add_row('[red]1-4 (Weak/Poor)[/red]', str(weak), 'Filtered out')
+        
+        table.add_row('', '', '')
+        table.add_row('[bold]Total scored[/bold]', f'[bold]{sum(c for _, c in distribution)}[/bold]', '')
+        
+        console.print(table)
+
+    # Log top rejected title patterns
+    low_score_titles = conn.execute(
+        'SELECT title, COUNT(*) as cnt FROM jobs '
+        'WHERE fit_score IS NOT NULL AND fit_score <= 3 '
+        'GROUP BY title ORDER BY cnt DESC LIMIT 5'
+    ).fetchall()
+    if low_score_titles:
+        log.info('Top filtered (score ≤ 3): %s',
+                 ', '.join(f'{row[0][:35]} ({row[1]})' for row in low_score_titles))
 
     return {
         "scored": len(results),

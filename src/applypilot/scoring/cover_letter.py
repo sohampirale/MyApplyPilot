@@ -298,6 +298,12 @@ def run_cover_letters(min_score: int = 7, limit: int = 20,
     elapsed = time.time() - t0
     log.info("Cover letters done in %.1fs: %d generated, %d errors", elapsed, saved, error_count)
 
+    avg_time = elapsed / len(jobs) if jobs else 0
+    log.info(
+        'Cover letter stats: avg %.1fs/letter | validation_mode=%s',
+        avg_time, validation_mode,
+    )
+
     return {
         "generated": saved,
         "errors": error_count,

@@ -12,6 +12,9 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 
+from rich.console import Console
+from rich.table import Table
+
 from jobspy import scrape_jobs
 
 from applypilot import config
@@ -243,7 +246,7 @@ def _run_one_search(
             df = _scrape_with_retry(kwargs, max_retries=max_retries)
             all_dfs.append(df)
         except Exception as e:
-            log.error("[%s] (non-gd): %s", label, e)
+            log.debug("[%s] (non-gd): %s", label, e)
 
     # Run Glassdoor separately with simplified location
     if has_glassdoor:
@@ -264,11 +267,13 @@ def _run_one_search(
             gd_df = _scrape_with_retry(gd_kwargs, max_retries=max_retries)
             all_dfs.append(gd_df)
         except Exception as e:
-            log.error("[%s] (glassdoor): %s", label, e)
+            log.debug("[%s] (glassdoor): %s", label, e)
+
+    board_results = {site: "blocked" for site in sites}
 
     if not all_dfs:
         log.error("[%s]: all sites failed", label)
-        return {"new": 0, "existing": 0, "errors": 1, "filtered": 0, "total": 0, "label": label}
+        return {"new": 0, "existing": 0, "errors": 1, "filtered": 0, "total": 0, "label": label, "board_results": board_results}
 
     import pandas as pd
     import warnings
@@ -276,12 +281,24 @@ def _run_one_search(
         warnings.simplefilter("ignore", FutureWarning)
         df = pd.concat(all_dfs, ignore_index=True) if len(all_dfs) > 1 else all_dfs[0]
 
+    # After all_dfs is populated, log a per-board summary
+    successful_sites = set(df['site'].str.lower().unique()) if 'site' in df.columns else set()
+    board_status = []
+    for site in sites:
+        if site.lower() in successful_sites:
+            board_status.append(f'{site}:OK')
+            board_results[site] = "OK"
+        else:
+            board_status.append(f'{site}:blocked')
+    log.info('[%s] Boards: %s', label, ' | '.join(board_status))
+
     if len(df) == 0:
         log.info("[%s] 0 results", label)
-        return {"new": 0, "existing": 0, "errors": 0, "filtered": 0, "total": 0, "label": label}
+        return {"new": 0, "existing": 0, "errors": 0, "filtered": 0, "total": 0, "label": label, "board_results": board_results}
 
     # Filter by location before storing
     before = len(df)
+    df_before_filter = df
     df = df[df.apply(lambda row: _location_ok(
         str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None,
         accept_locs, reject_locs,
@@ -296,7 +313,20 @@ def _run_one_search(
         msg += f", {filtered} filtered (location)"
     log.info(msg)
 
-    return {"new": new, "existing": existing, "errors": 0, "filtered": filtered, "total": before, "label": label}
+    if filtered:
+        # Collect sample rejected locations for transparency
+        rejected_samples = []
+        for _, row in df_before_filter.iterrows():
+            loc = str(row.get('location', '')) if str(row.get('location', '')) != 'nan' else None
+            if loc and not _location_ok(loc, accept_locs, reject_locs):
+                if loc not in rejected_samples:
+                    rejected_samples.append(loc)
+                if len(rejected_samples) >= 5:
+                    break
+        if rejected_samples:
+            log.info('  Filtered locations: %s', ', '.join(rejected_samples[:5]))
+
+    return {"new": new, "existing": existing, "errors": 0, "filtered": filtered, "total": before, "label": label, "board_results": board_results}
 
 
 # -- Single query search -----------------------------------------------------
@@ -411,6 +441,9 @@ def _full_crawl(
     log.info("Sites: %s | Results/site: %d | Hours old: %d",
              ", ".join(sites), results_per_site, hours_old)
 
+    # Track board_stats during the crawl
+    board_stats = {s: {"success": 0, "blocked": 0} for s in sites}
+
     # Ensure DB schema is ready
     init_db()
 
@@ -426,9 +459,17 @@ def _full_crawl(
             accept_locs, reject_locs, glassdoor_map,
         )
         completed += 1
-        total_new += result["new"]
-        total_existing += result["existing"]
-        total_errors += result["errors"]
+        total_new += result.get("new", 0)
+        total_existing += result.get("existing", 0)
+        total_errors += result.get("errors", 0)
+        
+        br = result.get("board_results", {})
+        for site, status in br.items():
+            if site in board_stats:
+                if status == "OK":
+                    board_stats[site]["success"] += 1
+                else:
+                    board_stats[site]["blocked"] += 1
 
         if completed % 5 == 0 or completed == len(searches):
             log.info("Progress: %d/%d queries done (%d new, %d dupes, %d errors)",
@@ -440,6 +481,18 @@ def _full_crawl(
 
     log.info("Full crawl complete: %d new | %d dupes | %d errors | %d total in DB",
              total_new, total_existing, total_errors, db_total)
+
+    # At the end, print a board summary
+    console = Console()
+    table = Table(title="Board Success Rate")
+    table.add_column("Board", style="cyan")
+    table.add_column("Success", justify="right", style="green")
+    table.add_column("Blocked", justify="right", style="red")
+    
+    for site, stats in board_stats.items():
+        table.add_row(site, str(stats["success"]), str(stats["blocked"]))
+        
+    console.print(table)
 
     return {
         "new": total_new,

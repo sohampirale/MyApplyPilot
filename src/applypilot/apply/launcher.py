@@ -137,7 +137,13 @@ def acquire_job(target_url: str | None = None, min_score: int = 7,
                 (row["url"],),
             )
             conn.commit()
-            logger.info("Skipping manual ATS: %s", row["url"][:80])
+            logger.info(
+                '[worker-%d] ⚠ Manual application required: %s — %s\n'
+                '  Tailored materials ready. Apply manually at: %s',
+                worker_id, row['title'][:40] if row['title'] else '?',
+                row['site'] or '?',
+                apply_url[:100],
+            )
             return None
 
         job_data = dict(row)
@@ -330,6 +336,11 @@ def run_job(job: dict, port: int, worker_id: int = 0,
                  company=job.get("site", ""), score=job.get("fit_score", 0),
                  start_time=time.time(), actions=0, last_action="starting agent")
     add_event(f"[W{worker_id}] Starting: {job['title'][:40]} @ {job.get('site', '')}")
+    logger.info(
+        '[worker-%d] Applying: %s @ %s (score=%s) | URL: %s',
+        worker_id, job['title'][:40], job.get('site', '?'),
+        job.get('fit_score', '?'), (job.get('application_url') or job['url'])[:80],
+    )
 
     worker_log = config.LOG_DIR / f"worker-{worker_id}.log"
     ts_header = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -378,6 +389,30 @@ def run_job(job: dict, port: int, worker_id: int = 0,
             pass
 
         update_state(worker_id, actions=action_count)
+
+        # Log human-readable application summary
+        form_summary_parts = []
+        output_lower = output.lower()
+        if 'upload' in output_lower or 'resume' in output_lower:
+            form_summary_parts.append('Resume uploaded')
+        if 'cover' in output_lower:
+            form_summary_parts.append('Cover letter attached')
+        if 'notice period' in output_lower:
+            form_summary_parts.append('Notice period filled')
+        if 'ctc' in output_lower or 'salary' in output_lower or 'lpa' in output_lower:
+            form_summary_parts.append('CTC/Salary filled')
+        if 'captcha' in output_lower:
+            form_summary_parts.append('⚠ CAPTCHA detected')
+        if 'login' in output_lower or 'sign in' in output_lower:
+            form_summary_parts.append('⚠ Login wall')
+        
+        if form_summary_parts:
+            logger.info('[worker-%d] Form actions: %s', worker_id, ' | '.join(form_summary_parts))
+
+        logger.info(
+            '[worker-%d] Completed: %s | %d actions in %ds',
+            worker_id, job['title'][:40], action_count, elapsed,
+        )
 
         def _clean_reason(s: str) -> str:
             return re.sub(r'[*`"]+$', '', s).strip()

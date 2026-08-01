@@ -371,7 +371,12 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
         if status not in ("ok", "partial"):
             errors[name] = status
 
-        console.print(f"\n  Stage '{name}' completed in {elapsed:.1f}s — {status}")
+        if elapsed >= 60:
+            elapsed_str = f"{int(elapsed // 60)}m {elapsed % 60:.0f}s"
+        else:
+            elapsed_str = f"{elapsed:.1f}s"
+        console.print(f"\n  Stage '{name}' completed in {elapsed_str} — {status}")
+
 
     total_elapsed = time.time() - pipeline_start
     return {"stages": results, "errors": errors, "elapsed": total_elapsed}
@@ -511,7 +516,13 @@ def run_pipeline(
     summary.add_column("Time", justify="right")
 
     for r in result["stages"]:
-        elapsed_str = f"{r['elapsed']:.1f}s"
+        stage_elapsed = r['elapsed']
+        if stage_elapsed >= 3600:
+            elapsed_str = f"{int(stage_elapsed // 3600)}h {int((stage_elapsed % 3600) // 60)}m"
+        elif stage_elapsed >= 60:
+            elapsed_str = f"{int(stage_elapsed // 60)}m {stage_elapsed % 60:.0f}s"
+        else:
+            elapsed_str = f"{stage_elapsed:.1f}s"
         status_display = r["status"][:30]
         if r["status"] == "ok":
             style = "green"
@@ -522,7 +533,14 @@ def run_pipeline(
         summary.add_row(r["stage"], f"[{style}]{status_display}[/{style}]", elapsed_str)
 
     summary.add_row("", "", "")
-    summary.add_row("[bold]Total[/bold]", "", f"[bold]{result['elapsed']:.1f}s[/bold]")
+    total_elapsed = result['elapsed']
+    if total_elapsed >= 3600:
+        total_time_str = f"{int(total_elapsed // 3600)}h {int((total_elapsed % 3600) // 60)}m"
+    elif total_elapsed >= 60:
+        total_time_str = f"{int(total_elapsed // 60)}m {total_elapsed % 60:.0f}s"
+    else:
+        total_time_str = f"{total_elapsed:.1f}s"
+    summary.add_row("[bold]Total[/bold]", "", f"[bold]{total_time_str}[/bold]")
     console.print(summary)
 
     # Final DB stats
@@ -535,6 +553,19 @@ def run_pipeline(
     console.print(f"    Cover letters:  {final['with_cover_letter']}")
     console.print(f"    Ready to apply: {final['ready_to_apply']}")
     console.print(f"    Applied:        {final['applied']}")
+    # Show deltas if anything changed
+    deltas = []
+    if final['total'] != pre_stats['total']:
+        deltas.append(f"+{final['total'] - pre_stats['total']} jobs discovered")
+    if final.get('with_description', 0) != pre_stats.get('with_description', 0):
+        deltas.append(f"+{final.get('with_description', 0) - pre_stats.get('with_description', 0)} enriched")
+    if final.get('scored', 0) != pre_stats.get('scored', 0):
+        deltas.append(f"+{final.get('scored', 0) - pre_stats.get('scored', 0)} scored")
+    if final.get('tailored', 0) != pre_stats.get('tailored', 0):
+        deltas.append(f"+{final.get('tailored', 0) - pre_stats.get('tailored', 0)} tailored")
+    if deltas:
+        console.print(f"    [bold green]Changes:    {', '.join(deltas)}[/bold green]")
+
     console.print(f"{'=' * 70}\n")
 
     return result

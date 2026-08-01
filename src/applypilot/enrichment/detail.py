@@ -574,9 +574,21 @@ def scrape_detail_page(page, url: str) -> dict:
         result["elapsed"] = time.time() - t0
         return result
 
+    if not json_ld_result:
+        ld_count = len(intel.get('json_ld', []))
+        if ld_count == 0:
+            log.debug('  Tier 1 (JSON-LD): Miss — no <script type="application/ld+json"> found')
+        else:
+            log.debug('  Tier 1 (JSON-LD): Miss — %d entries found but no valid JobPosting with description', ld_count)
+
     # Tier 2: Deterministic CSS
     desc = extract_description_deterministic(page)
     apply = extract_apply_url_deterministic(page)
+
+    if not desc:
+        log.debug('  Tier 2 (CSS): Miss — no matching selector found description content')
+    elif not apply:
+        log.debug('  Tier 2 (CSS): Partial — description found but no apply URL')
 
     if desc:
         result["full_description"] = desc
@@ -601,6 +613,9 @@ def scrape_detail_page(page, url: str) -> dict:
     else:
         result["status"] = "error"
         result["error"] = "no data extracted"
+
+    if result.get('full_description') and len(result['full_description']) < 200:
+        log.info('  ⚠ Short description (%d chars) — possible login wall or truncated page', len(result['full_description']))
 
     result["elapsed"] = time.time() - t0
     return result
@@ -641,6 +656,8 @@ def scrape_site_batch(
             page = context.new_page()
 
             for i, (url, title) in enumerate(jobs):
+                if i > 0 and i % 50 == 0:
+                    log.info("Batch progress: %d/%d jobs processed", i, len(jobs))
                 log.info("[%d/%d] %s", i + 1, len(jobs), title[:50] if title else url[:50])
 
                 result = scrape_detail_page(page, url)
@@ -708,6 +725,8 @@ def _run_detail_scraper(
         f"SELECT url, title, site FROM jobs {where} ORDER BY site"
     ).fetchall()
 
+    total_pending = len(rows)
+
     if not rows:
         log.info("No pending jobs to scrape.")
         return {"processed": 0, "ok": 0, "partial": 0, "error": 0}
@@ -737,6 +756,11 @@ def _run_detail_scraper(
             total_stats[k] += stats[k]
         for t, count in stats["tiers"].items():
             total_stats["tiers"][t] = total_stats["tiers"].get(t, 0) + count
+
+        overall_pct = (total_stats['processed'] / total_pending * 100) if total_pending > 0 else 0
+        log.info('Overall progress: %d/%d (%.0f%%) | T1: %d | T2: %d | T3: %d',
+                 total_stats['processed'], total_pending, overall_pct,
+                 total_stats['tiers'].get(1, 0), total_stats['tiers'].get(2, 0), total_stats['tiers'].get(3, 0))
 
     if workers > 1 and len(order) > 1:
         # Parallel mode: each site batch runs in its own thread with its own
@@ -778,7 +802,8 @@ def _run_detail_scraper(
     total = total_stats["processed"]
     if total > 0:
         savings = ((total - llm_calls) / total) * 100
-        log.info("LLM calls: %d/%d (%.0f%% saved)", llm_calls, total, savings)
+        est_time_saved = (total - llm_calls) * 3.0  # ~3s per LLM call avoided
+        log.info('LLM calls: %d/%d (%.0f%% saved, ~%.0f min saved)', llm_calls, total, savings, est_time_saved / 60)
 
     return total_stats
 

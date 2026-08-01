@@ -534,6 +534,26 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
                 "status": report["status"],
                 "attempts": report["attempts"],
             }
+            
+            # Audit: fact preservation check
+            if report['status'] in ('approved', 'approved_with_judge_warning'):
+                facts = profile.get('resume_facts', {})
+                preserved = facts.get('preserved_companies', []) + [facts.get('preserved_school', '')]
+                preserved = [p for p in preserved if p]  # remove empty strings
+                missing_facts = [p for p in preserved if p.lower() not in tailored.lower()]
+                
+                # Extract keywords from validation if available
+                validator = report.get('validator', {})
+                warnings = validator.get('warnings', []) if isinstance(validator, dict) else []
+                
+                fact_status = '0 missing' if not missing_facts else f'{len(missing_facts)} missing: {", ".join(missing_facts[:3])}'
+                log.info(
+                    '  Audit: %s | Attempts: %d | Judge: %s | Facts: %s',
+                    report['status'],
+                    report['attempts'],
+                    report.get('judge', {}).get('verdict', 'N/A') if isinstance(report.get('judge'), dict) else 'N/A',
+                    fact_status,
+                )
         except Exception as e:
             result = {
                 "url": job["url"], "title": job["title"], "site": job["site"],
@@ -580,6 +600,14 @@ def run_tailoring(min_score: int = 7, limit: int = 20,
         stats.get("failed_validation", 0),
         stats.get("failed_judge", 0),
         stats.get("error", 0),
+    )
+
+    avg_time = elapsed / len(jobs) if jobs else 0
+    log.info(
+        'Tailoring stats: avg %.1fs/resume | %d LLM judge calls | mode=%s',
+        avg_time,
+        stats.get('approved', 0) + stats.get('failed_judge', 0),
+        validation_mode,
     )
 
     return {
