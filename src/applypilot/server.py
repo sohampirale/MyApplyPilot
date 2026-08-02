@@ -14,7 +14,7 @@ import webbrowser
 
 from applypilot.config import APP_DIR, load_env, ensure_dirs
 from applypilot.database import get_connection, init_db
-from applypilot.view import generate_dashboard
+from applypilot.view import generate_dashboard, generate_job_detail_page
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +31,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if parsed.path in ("/", "/dashboard", "/dashboard.html"):
             dash_path = generate_dashboard()
             content = Path(dash_path).read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+        elif parsed.path == "/job":
+            params = parse_qs(parsed.query)
+            job_url = params.get("url", [None])[0]
+            if not job_url:
+                self.send_error(400, "Missing 'url' query parameter")
+                return
+            html_content = generate_job_detail_page(job_url)
+            content = html_content.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(content)))

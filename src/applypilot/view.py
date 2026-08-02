@@ -15,6 +15,7 @@ import os
 import webbrowser
 from html import escape
 from pathlib import Path
+from urllib.parse import quote as url_quote
 
 from rich.console import Console
 
@@ -233,7 +234,7 @@ def generate_dashboard(output_path: str | None = None) -> str:
               <button class="btn-icon" onclick="copyLink('{apply_url}', this)" title="Copy Job Application Link">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               </button>
-              {f'<button class="btn-secondary details-btn" onclick="openJobModal(\'{card_id}\')">👁️ Details</button>' if desc_text else ''}
+              {f'<a href="/job?url={url_quote(j["url"] or "", safe="")}" class="btn-secondary details-btn" style="text-decoration:none;">📄 View Details →</a>' if desc_text else ''}
             </div>
             <div class="card-footer-right">
               {apply_html}
@@ -1343,6 +1344,465 @@ applyFilters();
     abs_path = str(out.resolve())
     console.print(f"[green]Dashboard written to {abs_path}[/green]")
     return abs_path
+
+def generate_job_detail_page(job_url: str) -> str:
+    """Generate a standalone HTML detail page for a single job.
+
+    Args:
+        job_url: The URL primary key of the job in the database.
+
+    Returns:
+        HTML string of the complete page, or a simple error HTML if job not found.
+    """
+    conn = get_connection()
+    
+    cols = """url, title, salary, description, location, site, strategy,
+              full_description, application_url, detail_error,
+              fit_score, score_reasoning, tailored_resume_path,
+              discovered_at, detail_scraped_at, scored_at, tailored_at, 
+              cover_letter_path, applied_at, apply_status, apply_error, apply_attempts"""
+              
+    jobs = conn.execute(f"""
+        SELECT {cols}
+        FROM jobs
+        WHERE fit_score >= 1
+        ORDER BY fit_score DESC, site, title
+    """).fetchall()
+    
+    job_idx = -1
+    for i, j in enumerate(jobs):
+        if j["url"] == job_url:
+            job_idx = i
+            break
+            
+    if job_idx == -1:
+        current_job = conn.execute(f"SELECT {cols} FROM jobs WHERE url = ?", (job_url,)).fetchone()
+        if not current_job:
+            return """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Job Not Found - ApplyPilot</title>
+    <style>body { background: #090d16; color: white; font-family: sans-serif; text-align: center; padding: 50px; }</style>
+</head>
+<body><h1>Job Not Found</h1><p>The requested job could not be found in the database.</p><a href="/" style="color:#3b82f6;">Return to Dashboard</a></body>
+</html>"""
+        prev_url = ""
+        next_url = ""
+        pos_text = "Unscored Job"
+    else:
+        current_job = jobs[job_idx]
+        prev_url = jobs[job_idx - 1]["url"] if job_idx > 0 else ""
+        next_url = jobs[job_idx + 1]["url"] if job_idx < len(jobs) - 1 else ""
+        pos_text = f"Job {job_idx + 1} of {len(jobs)}"
+        
+    j = current_job
+    
+    title = escape(j["title"] or "Untitled")
+    url = escape(j["url"] or "")
+    salary = escape(j["salary"] or "")
+    location = escape(j["location"] or "")
+    site = escape(j["site"] or "")
+    strategy = escape(j["strategy"] or "Unknown")
+    apply_url = escape(j["application_url"] or j["url"] or "")
+    
+    score = j["fit_score"] or 0
+    score_color = "#10b981" if score >= 7 else ("#f59e0b" if score >= 5 else "#ef4444")
+    score_label = {
+        10: "Perfect Match", 9: "Excellent Fit", 8: "Strong Fit",
+        7: "Good Fit", 6: "Moderate+", 5: "Moderate",
+        4: "Low-Moderate", 3: "Low Fit", 2: "Weak Match", 1: "Poor Fit",
+    }.get(score, f"Score {score}") if score else "Not Scored"
+    
+    colors = {
+        "RemoteOK": "#10b981", "WelcomeToTheJungle": "#f59e0b",
+        "Job Bank Canada": "#3b82f6", "CareerJet Canada": "#8b5cf6",
+        "Hacker News Jobs": "#ff6600", "BuiltIn Remote": "#ec4899",
+        "TD Bank": "#00a651", "CIBC": "#c41f3e", "RBC": "#003168",
+        "indeed": "#2164f3", "linkedin": "#0a66c2",
+        "Dice": "#eb1c26", "Glassdoor": "#0caa41",
+    }
+    site_color = colors.get(j["site"] or "", "#818cf8")
+    
+    # Reasoning parsing
+    reasoning_raw = j["score_reasoning"] or ""
+    reasoning_lines = [line.strip() for line in reasoning_raw.split("\n") if line.strip()]
+    keywords_str = reasoning_lines[0] if reasoning_lines else ""
+    reasoning_str = reasoning_lines[1] if len(reasoning_lines) > 1 else "No reasoning available."
+    
+    keyword_chips_html = ""
+    if keywords_str:
+        kw_list = [k.strip() for k in keywords_str.split(",") if k.strip()]
+        for kw in kw_list:
+            keyword_chips_html += f'<span class="kw-chip">{escape(kw)}</span>'
+            
+    desc_text = j["full_description"] or j["description"] or "No description available."
+    full_desc_html = escape(desc_text).replace("\n", "<br>")
+    
+    has_resume = bool(j["tailored_resume_path"])
+    resume_status = escape(j["tailored_resume_path"]) if has_resume else "Not yet tailored"
+    cover_status = escape(j["cover_letter_path"]) if j["cover_letter_path"] else "Not generated"
+    
+    applied_at = escape(j["applied_at"]) if j["applied_at"] else "Not applied"
+    apply_status = escape(j["apply_status"]) if j["apply_status"] else "-"
+    
+    # Meta pills
+    meta_pills = ""
+    if salary:
+        meta_pills += f'<span class="meta-tag salary">💰 {salary}</span> '
+    if location:
+        meta_pills += f'<span class="meta-tag location">📍 {location}</span> '
+    if has_resume:
+        meta_pills += '<span class="meta-tag resume-ready">📄 Resume Ready</span>'
+    else:
+        meta_pills += '<span class="meta-tag resume-auto">⚡ Auto-Tailors on Apply</span>'
+
+    # Nav buttons
+    prev_html = f'<a href="/job?url={url_quote(prev_url, safe="")}" class="nav-btn">‹ Prev</a>' if prev_url else '<span class="nav-btn disabled">‹ Prev</span>'
+    next_html = f'<a href="/job?url={url_quote(next_url, safe="")}" class="nav-btn">Next ›</a>' if next_url else '<span class="nav-btn disabled">Next ›</span>'
+
+    # Action buttons
+    action_html = ""
+    if has_resume:
+        action_html = f'<a href="{apply_url}" target="_blank" class="btn-primary">Apply Now ↗</a>'
+    else:
+        action_html = f'<button class="btn-primary tailor-apply-btn" onclick="tailorAndApply(this, \'{url}\', \'{apply_url}\')">⚡ Tailor &amp; Apply</button>'
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title} - ApplyPilot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {{
+    --bg-dark: #090d16;
+    --bg-card: rgba(17, 24, 39, 0.75);
+    --bg-card-hover: rgba(30, 41, 59, 0.85);
+    --border-card: rgba(255, 255, 255, 0.08);
+    --border-card-hover: rgba(96, 165, 250, 0.3);
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --accent-emerald: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-rose: #ef4444;
+    --text-main: #f3f4f6;
+    --text-muted: #9ca3af;
+    --text-sub: #6b7280;
+    --font-heading: 'Plus Jakarta Sans', -apple-system, sans-serif;
+    --font-body: 'Inter', -apple-system, sans-serif;
+  }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{
+    font-family: var(--font-body);
+    background: var(--bg-dark);
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.12) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.08) 0px, transparent 50%),
+      radial-gradient(at 50% 100%, rgba(139, 92, 246, 0.08) 0px, transparent 50%);
+    background-attachment: fixed;
+    color: var(--text-main);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }}
+  .navbar {{
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(9, 13, 22, 0.82);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border-card);
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }}
+  .nav-left, .nav-right, .nav-center {{ display: flex; align-items: center; gap: 1rem; }}
+  .nav-center {{ color: var(--text-muted); font-size: 0.9rem; font-weight: 500; }}
+  .nav-link {{
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }}
+  .nav-link:hover {{ color: var(--text-main); }}
+  .nav-btn {{
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-main);
+    padding: 0.4rem 0.85rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }}
+  .nav-btn:hover:not(.disabled) {{ background: rgba(255, 255, 255, 0.15); color: #fff; }}
+  .nav-btn.disabled {{ opacity: 0.4; cursor: not-allowed; pointer-events: none; }}
+  
+  .container {{ max-width: 1200px; margin: 0 auto; padding: 2rem; flex: 1; width: 100%; }}
+  
+  .hero-section {{
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border-card);
+    border-radius: 20px;
+    padding: 2.5rem;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+    animation: fadeIn 0.5s ease-out;
+  }}
+  @keyframes fadeIn {{ from {{ opacity: 0; transform: translateY(10px); }} to {{ opacity: 1; transform: translateY(0); }} }}
+  
+  .hero-top {{ display: flex; justify-content: space-between; align-items: flex-start; gap: 2rem; }}
+  .hero-main {{ flex: 1; }}
+  .job-title {{ font-family: var(--font-heading); font-size: 2.5rem; font-weight: 800; line-height: 1.2; margin-bottom: 1rem; color: #fff; }}
+  .site-badge {{
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+  }}
+  .meta-row {{ display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 2rem; }}
+  .meta-tag {{ font-size: 0.85rem; padding: 0.35rem 0.75rem; border-radius: 8px; font-weight: 500; display: inline-flex; align-items: center; gap: 0.4rem; }}
+  .meta-tag.salary {{ background: rgba(16, 185, 129, 0.1); color: #34d399; }}
+  .meta-tag.location {{ background: rgba(59, 130, 246, 0.1); color: #93c5fd; }}
+  .meta-tag.resume-ready {{ background: rgba(6, 78, 59, 0.6); color: #6ee7b7; border: 1px solid rgba(52, 211, 153, 0.3); }}
+  .meta-tag.resume-auto {{ background: rgba(30, 58, 95, 0.6); color: #93c5fd; border: 1px solid rgba(147, 197, 253, 0.2); }}
+
+  .hero-score-box {{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 1.5rem;
+    border-radius: 16px;
+    border: 1px solid var(--border-card);
+    min-width: 140px;
+  }}
+  .score-circle {{
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2.5rem; font-weight: 800; font-family: var(--font-heading);
+    margin-bottom: 0.5rem; color: #0f172a;
+    box-shadow: 0 0 30px {score_color}40;
+  }}
+  .score-label {{ font-size: 0.9rem; font-weight: 600; color: var(--text-main); text-align: center; }}
+  
+  .action-bar {{
+    display: flex; gap: 1rem; margin-top: 1rem;
+    padding-top: 1.5rem; border-top: 1px solid var(--border-card);
+  }}
+  
+  .btn-primary {{
+    font-size: 0.95rem; font-weight: 600; color: #ffffff;
+    background: linear-gradient(135deg, #3b82f6, #2563eb);
+    border: 1px solid #60a5fa; border-radius: 10px;
+    padding: 0.75rem 1.5rem; cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    transition: all 0.2s ease; box-shadow: 0 4px 14px rgba(59, 130, 246, 0.3);
+  }}
+  .btn-primary:hover {{ transform: translateY(-2px); box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5); background: linear-gradient(135deg, #2563eb, #1d4ed8); }}
+  .btn-primary:disabled {{ opacity: 0.7; cursor: wait; }}
+  
+  .btn-secondary {{
+    font-size: 0.95rem; font-weight: 500; color: var(--text-main);
+    background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px; padding: 0.75rem 1.25rem; cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 0.5rem; transition: all 0.2s;
+  }}
+  .btn-secondary:hover {{ background: rgba(255, 255, 255, 0.15); color: #fff; }}
+  
+  .two-col {{ display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; }}
+  @media (max-width: 900px) {{ .two-col {{ grid-template-columns: 1fr; }} .hero-top {{ flex-direction: column; }} }}
+  
+  .card {{
+    background: var(--bg-card); backdrop-filter: blur(16px);
+    border: 1px solid var(--border-card); border-radius: 16px;
+    padding: 1.5rem; margin-bottom: 2rem;
+    transition: all 0.3s;
+  }}
+  .card:hover {{ border-color: rgba(255, 255, 255, 0.15); }}
+  .card h3 {{ font-family: var(--font-heading); font-size: 1.2rem; margin-bottom: 1.25rem; color: #fff; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid var(--border-card); padding-bottom: 0.75rem; }}
+  
+  .kw-chip {{
+    font-size: 0.8rem; background: rgba(16, 185, 129, 0.12); color: #34d399;
+    padding: 0.25rem 0.6rem; border-radius: 6px; border: 1px solid rgba(52, 211, 153, 0.2);
+    display: inline-block; margin: 0 0.4rem 0.4rem 0;
+  }}
+  .reasoning-text {{ font-size: 0.95rem; line-height: 1.6; color: var(--text-muted); margin-top: 1rem; font-style: italic; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 8px; border-left: 3px solid {score_color}; }}
+  
+  .job-desc {{ font-size: 0.95rem; line-height: 1.7; color: #cbd5e1; white-space: pre-wrap; word-break: break-word; }}
+  
+  .meta-list {{ list-style: none; }}
+  .meta-list li {{ margin-bottom: 1.25rem; font-size: 0.9rem; display: flex; flex-direction: column; gap: 0.35rem; }}
+  .meta-list .lbl {{ color: var(--text-sub); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }}
+  .meta-list .val {{ color: var(--text-main); word-break: break-all; font-weight: 500; }}
+  .meta-list .val a {{ color: #60a5fa; text-decoration: none; }}
+  .meta-list .val a:hover {{ text-decoration: underline; }}
+  
+  .footer {{ text-align: center; padding: 2rem; color: var(--text-sub); font-size: 0.85rem; border-top: 1px solid var(--border-card); margin-top: auto; }}
+  
+  .toast-container {{ position: fixed; bottom: 2rem; right: 2rem; z-index: 1000; display: flex; flex-direction: column; gap: 0.5rem; }}
+  .toast {{ background: #1e293b; border: 1px solid #3b82f6; color: #ffffff; padding: 0.75rem 1.25rem; border-radius: 12px; font-size: 0.85rem; font-weight: 500; box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 0.5rem; animation: toastIn 0.3s ease-out forwards; }}
+  @keyframes toastIn {{ from {{ opacity: 0; transform: translateY(10px); }} to {{ opacity: 1; transform: translateY(0); }} }}
+</style>
+</head>
+<body>
+
+<div class="navbar">
+  <div class="nav-left">
+    <a href="/" class="nav-link">← Back to Dashboard</a>
+  </div>
+  <div class="nav-center">
+    {prev_html}
+    <span>{pos_text}</span>
+    {next_html}
+  </div>
+  <div class="nav-right">
+    <a href="{url}" target="_blank" class="nav-btn">🌐 View Original Posting</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="hero-section">
+    <div class="hero-top">
+      <div class="hero-main">
+        <div class="site-badge" style="background:{site_color}20; color:{site_color}; border: 1px solid {site_color}40;">
+          {site}
+        </div>
+        <h1 class="job-title">{title}</h1>
+        <div class="meta-row">{meta_pills}</div>
+      </div>
+      <div class="hero-score-box">
+        <div class="score-circle" style="background:{score_color}">{score}</div>
+        <div class="score-label">{score_label}</div>
+      </div>
+    </div>
+    <div class="action-bar">
+      {action_html}
+      <button class="btn-secondary" onclick="copyLink('{apply_url}')">📋 Copy Application Link</button>
+    </div>
+  </div>
+
+  <div class="two-col">
+    <div class="left-col">
+      <div class="card">
+        <h3>🎯 AI Fit Analysis</h3>
+        <div>{keyword_chips_html}</div>
+        <div class="reasoning-text">"{escape(reasoning_str)}"</div>
+      </div>
+      
+      <div class="card">
+        <h3>📝 Full Job Description</h3>
+        <div class="job-desc">{full_desc_html}</div>
+      </div>
+    </div>
+    
+    <div class="right-col">
+      <div class="card">
+        <h3>🗂️ Job Metadata</h3>
+        <ul class="meta-list">
+          <li><span class="lbl">Source</span><span class="val">{site}</span></li>
+          <li><span class="lbl">Discovery Strategy</span><span class="val">{strategy}</span></li>
+          <li><span class="lbl">Job URL</span><span class="val"><a href="{url}" target="_blank">{(url[:40] + '...') if len(url) > 40 else url}</a></span></li>
+          <li><span class="lbl">Application URL</span><span class="val"><a href="{apply_url}" target="_blank">{(apply_url[:40] + '...') if len(apply_url) > 40 else apply_url}</a></span></li>
+          <li><span class="lbl">Discovered</span><span class="val">{escape(str(j["discovered_at"]) if j["discovered_at"] else "-")}</span></li>
+          <li><span class="lbl">Enriched</span><span class="val">{escape(str(j["detail_scraped_at"]) if j["detail_scraped_at"] else "-")}</span></li>
+          <li><span class="lbl">Scored</span><span class="val">{escape(str(j["scored_at"]) if j["scored_at"] else "-")}</span></li>
+        </ul>
+      </div>
+      
+      <div class="card">
+        <h3>🚀 Pipeline Status</h3>
+        <ul class="meta-list">
+          <li><span class="lbl">Resume</span><span class="val">{resume_status}</span></li>
+          <li><span class="lbl">Cover Letter</span><span class="val">{cover_status}</span></li>
+          <li><span class="lbl">Application</span><span class="val">{applied_at} / {apply_status} / {escape(j["apply_error"] or "No errors")}</span></li>
+          <li><span class="lbl">Apply Attempts</span><span class="val">{j["apply_attempts"] or 0}</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">Generated by ApplyPilot · AI Job Agent</div>
+<div id="toast-container" class="toast-container"></div>
+
+<script>
+function showToast(msg) {{
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.innerHTML = `<span>✨</span> <span>${{msg}}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {{
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s ease';
+    setTimeout(() => toast.remove(), 300);
+  }}, 2500);
+}}
+
+function copyLink(url) {{
+  navigator.clipboard.writeText(url).then(() => {{
+    showToast('Job application link copied to clipboard!');
+  }}).catch(() => {{
+    showToast('Failed to copy link');
+  }});
+}}
+
+async function tailorAndApply(btn, jobUrl, applyUrl) {{
+  btn.disabled = true;
+  btn.textContent = '⏳ Tailoring...';
+  
+  const newTab = window.open('about:blank', '_blank');
+  if (newTab) {{
+    newTab.document.write('<div style="font-family:Inter,sans-serif;background:#090d16;color:#f3f4f6;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;"><h2>⚡ ApplyPilot is tailoring your resume...</h2><p style="color:#9ca3af;">Redirecting to application page shortly!</p></div>');
+  }}
+  
+  try {{
+    const res = await fetch('/api/tailor', {{
+      method: 'POST',
+      headers: {{ 'Content-Type': 'application/json' }},
+      body: JSON.stringify({{ url: jobUrl }})
+    }});
+    const data = await res.json();
+    const targetUrl = (data.status === 'ok' && data.apply_url) ? data.apply_url : applyUrl;
+    
+    if (newTab && !newTab.closed) {{
+      newTab.location.href = targetUrl;
+    }} else {{
+      window.location.href = targetUrl;
+    }}
+    
+    btn.textContent = 'Apply ↗';
+    btn.className = 'btn-primary apply-link';
+    btn.disabled = false;
+    btn.onclick = () => window.open(targetUrl, '_blank');
+    showToast('Resume tailored successfully!');
+  }} catch (e) {{
+    if (newTab && !newTab.closed) newTab.location.href = applyUrl;
+    else window.location.href = applyUrl;
+  }}
+}}
+</script>
+</body>
+</html>"""
+
+    return html
 
 
 def open_dashboard(output_path: str | None = None) -> None:
