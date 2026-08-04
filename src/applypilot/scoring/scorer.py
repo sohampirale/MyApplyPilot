@@ -105,8 +105,68 @@ def score_job(resume_text: str, job: dict) -> dict:
         return {"score": 0, "keywords": "", "reasoning": f"LLM error: {e}"}
 
 
+def _print_scoring_summary(conn, completed: int, errors: int, elapsed: float) -> list:
+    """Print score distribution summary and return distribution data."""
+    if elapsed > 0:
+        log.info("Done: %d scored in %.1fs (%.1f jobs/sec)", completed, elapsed,
+                 completed / elapsed)
+    else:
+        log.info("Done: %d scored", completed)
+
+    # Score distribution
+    dist = conn.execute("""
+        SELECT fit_score, COUNT(*) FROM jobs
+        WHERE fit_score IS NOT NULL
+        GROUP BY fit_score ORDER BY fit_score DESC
+    """).fetchall()
+    distribution = [(row[0], row[1]) for row in dist]
+
+    # Render score distribution summary table
+    if distribution:
+        table = Table(title='Fit Scoring Summary', show_header=True, header_style='bold')
+        table.add_column('Score Tier', style='bold')
+        table.add_column('Count', justify='right')
+        table.add_column('Action', style='dim')
+
+        # Group scores into tiers
+        perfect = sum(c for s, c in distribution if s >= 9)
+        strong = sum(c for s, c in distribution if 7 <= s <= 8)
+        moderate = sum(c for s, c in distribution if 5 <= s <= 6)
+        weak = sum(c for s, c in distribution if s <= 4)
+
+        if perfect:
+            table.add_row('[green]9-10 (Perfect)[/green]', str(perfect), 'Resume tailoring')
+        if strong:
+            table.add_row('[green]7-8 (Strong)[/green]', str(strong), 'Resume tailoring')
+        if moderate:
+            table.add_row('[yellow]5-6 (Moderate)[/yellow]', str(moderate), 'Saved (skipped tailoring)')
+        if weak:
+            table.add_row('[red]1-4 (Weak/Poor)[/red]', str(weak), 'Filtered out')
+
+        table.add_row('', '', '')
+        table.add_row('[bold]Total scored[/bold]', f'[bold]{sum(c for _, c in distribution)}[/bold]', '')
+
+        console.print(table)
+
+    # Log top rejected title patterns
+    low_score_titles = conn.execute(
+        'SELECT title, COUNT(*) as cnt FROM jobs '
+        'WHERE fit_score IS NOT NULL AND fit_score <= 3 '
+        'GROUP BY title ORDER BY cnt DESC LIMIT 5'
+    ).fetchall()
+    if low_score_titles:
+        log.info('Top filtered (score ≤ 3): %s',
+                 ', '.join(f'{row[0][:35]} ({row[1]})' for row in low_score_titles))
+
+    return distribution
+
+
 def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     """Score unscored jobs that have full descriptions.
+
+    Scores are committed to the database **immediately** after each job is
+    scored, so progress is never lost if the process is interrupted (Ctrl+C,
+    API credit exhaustion, etc.).
 
     Args:
         limit: Maximum number of jobs to score in this run.
@@ -139,95 +199,66 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     t0 = time.time()
     completed = 0
     errors = 0
-    results: list[dict] = []
 
-    for job in jobs:
-        result = score_job(resume_text, job)
-        result["url"] = job["url"]
-        completed += 1
+    # Track high-score count for progress logging
+    high_scores = 0
 
-        if result["score"] == 0:
-            errors += 1
+    try:
+        for job in jobs:
+            result = score_job(resume_text, job)
+            completed += 1
 
-        results.append(result)
+            if result["score"] == 0:
+                errors += 1
+            if result["score"] >= 7:
+                high_scores += 1
 
-        log.info(
-            "[%d/%d] score=%d  %s",
-            completed, len(jobs), result["score"], job.get("title", "?")[:60],
-        )
+            # ── Commit this score to DB immediately ──────────────────
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ? WHERE url = ?",
+                (result["score"],
+                 f"{result['keywords']}\n{result['reasoning']}",
+                 now, job["url"]),
+            )
+            conn.commit()
 
-        # Every 100 jobs, log a progress summary
-        if completed % 100 == 0:
-            elapsed_so_far = time.time() - t0
-            rate = completed / elapsed_so_far if elapsed_so_far > 0 else 0
-            remaining = len(jobs) - completed
-            eta_min = (remaining / rate / 60) if rate > 0 else 0
-            high_scores = sum(1 for r in results if r['score'] >= 7)
             log.info(
-                'Progress: %d/%d (%.0f%%) | %.1f jobs/sec | ETA: %.0f min | Score>=7: %d',
-                completed, len(jobs), completed / len(jobs) * 100,
-                rate, eta_min, high_scores,
+                "[%d/%d] score=%d  %s",
+                completed, len(jobs), result["score"], job.get("title", "?")[:60],
             )
 
-    # Write scores to DB
-    now = datetime.now(timezone.utc).isoformat()
-    for r in results:
-        conn.execute(
-            "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ? WHERE url = ?",
-            (r["score"], f"{r['keywords']}\n{r['reasoning']}", now, r["url"]),
+            # Every 100 jobs, log a progress summary
+            if completed % 100 == 0:
+                elapsed_so_far = time.time() - t0
+                rate = completed / elapsed_so_far if elapsed_so_far > 0 else 0
+                remaining = len(jobs) - completed
+                eta_min = (remaining / rate / 60) if rate > 0 else 0
+                log.info(
+                    'Progress: %d/%d (%.0f%%) | %.1f jobs/sec | ETA: %.0f min | Score>=7: %d',
+                    completed, len(jobs), completed / len(jobs) * 100,
+                    rate, eta_min, high_scores,
+                )
+
+    except KeyboardInterrupt:
+        elapsed = time.time() - t0
+        console.print(
+            f"\n[yellow]Interrupted after scoring {completed}/{len(jobs)} jobs. "
+            f"All {completed} scores are safely saved in the database.[/yellow]"
         )
-    conn.commit()
+        distribution = _print_scoring_summary(conn, completed, errors, elapsed)
+        return {
+            "scored": completed,
+            "errors": errors,
+            "elapsed": elapsed,
+            "distribution": distribution,
+        }
 
     elapsed = time.time() - t0
-    log.info("Done: %d scored in %.1fs (%.1f jobs/sec)", len(results), elapsed, len(results) / elapsed if elapsed > 0 else 0)
-
-    # Score distribution
-    dist = conn.execute("""
-        SELECT fit_score, COUNT(*) FROM jobs
-        WHERE fit_score IS NOT NULL
-        GROUP BY fit_score ORDER BY fit_score DESC
-    """).fetchall()
-    distribution = [(row[0], row[1]) for row in dist]
-
-    # Render score distribution summary table
-    if distribution:
-        table = Table(title='Fit Scoring Summary', show_header=True, header_style='bold')
-        table.add_column('Score Tier', style='bold')
-        table.add_column('Count', justify='right')
-        table.add_column('Action', style='dim')
-        
-        # Group scores into tiers
-        perfect = sum(c for s, c in distribution if s >= 9)
-        strong = sum(c for s, c in distribution if 7 <= s <= 8)
-        moderate = sum(c for s, c in distribution if 5 <= s <= 6)
-        weak = sum(c for s, c in distribution if s <= 4)
-        
-        if perfect:
-            table.add_row('[green]9-10 (Perfect)[/green]', str(perfect), 'Resume tailoring')
-        if strong:
-            table.add_row('[green]7-8 (Strong)[/green]', str(strong), 'Resume tailoring')
-        if moderate:
-            table.add_row('[yellow]5-6 (Moderate)[/yellow]', str(moderate), 'Saved (skipped tailoring)')
-        if weak:
-            table.add_row('[red]1-4 (Weak/Poor)[/red]', str(weak), 'Filtered out')
-        
-        table.add_row('', '', '')
-        table.add_row('[bold]Total scored[/bold]', f'[bold]{sum(c for _, c in distribution)}[/bold]', '')
-        
-        console.print(table)
-
-    # Log top rejected title patterns
-    low_score_titles = conn.execute(
-        'SELECT title, COUNT(*) as cnt FROM jobs '
-        'WHERE fit_score IS NOT NULL AND fit_score <= 3 '
-        'GROUP BY title ORDER BY cnt DESC LIMIT 5'
-    ).fetchall()
-    if low_score_titles:
-        log.info('Top filtered (score ≤ 3): %s',
-                 ', '.join(f'{row[0][:35]} ({row[1]})' for row in low_score_titles))
+    distribution = _print_scoring_summary(conn, completed, errors, elapsed)
 
     return {
-        "scored": len(results),
+        "scored": completed,
         "errors": errors,
         "elapsed": elapsed,
         "distribution": distribution,
