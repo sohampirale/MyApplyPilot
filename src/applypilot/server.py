@@ -106,6 +106,36 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "text": text_content,
                     "path": str(rpath)
                 })
+        elif parsed.path == "/api/logs":
+            params = parse_qs(parsed.query)
+            cid = params.get("candidate", [get_active_candidate_id()])[0]
+            from applypilot.config import get_candidate_logs_dir
+            log_file = get_candidate_logs_dir(cid) / "apply.log"
+            if not log_file.exists():
+                self._send_json({"status": "ok", "logs": []})
+                return
+            lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()[-200:]
+            self._send_json({"status": "ok", "logs": lines})
+
+        elif parsed.path == "/api/trace":
+            params = parse_qs(parsed.query)
+            cid = params.get("candidate", [get_active_candidate_id()])[0]
+            job_url = params.get("url", [""])[0]
+            if not job_url:
+                self._send_json({"status": "error", "error": "Missing job url"}, status=400)
+                return
+            import hashlib
+            from applypilot.config import get_candidate_traces_dir
+            job_hash = hashlib.md5(job_url.encode()).hexdigest()[:12]
+            trace_file = get_candidate_traces_dir(cid) / f"{job_hash}.json"
+            if not trace_file.exists():
+                self._send_json({"status": "ok", "has_trace": False})
+                return
+            try:
+                data = json.loads(trace_file.read_text(encoding="utf-8"))
+                self._send_json({"status": "ok", "has_trace": True, "trace": data})
+            except Exception as e:
+                self._send_json({"status": "error", "error": f"Error reading trace: {e}"})
         else:
             self.send_error(404, "Not Found")
 

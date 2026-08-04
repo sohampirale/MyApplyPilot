@@ -91,6 +91,8 @@ async def run_browser_agent(
     worker_id: int = 0,
     max_steps: int = 100,
     on_action: Callable[[str], None] | None = None,
+    job_url: str | None = None,
+    candidate_id: str | None = None,
 ) -> tuple[str, int]:
     """Run a browser-use agent to complete a job application.
 
@@ -104,23 +106,20 @@ async def run_browser_agent(
         max_steps: Maximum agent steps before timeout.
         on_action: Optional callback invoked with action description strings
                    as the agent takes actions (for dashboard updates).
+        job_url: Target job URL for JSON trace indexing.
+        candidate_id: Active candidate ID for data isolation.
 
     Returns:
         Tuple of (full_output_text, action_count).
     """
-    # FIX C1: browser-use 0.13.6 does NOT export BrowserConfig.
-    # Browser (alias for BrowserSession) accepts cdp_url directly.
     from browser_use import Agent, Browser
 
     llm = _get_llm()
 
-    # FIX C1: Connect to existing Chrome via CDP — pass cdp_url directly
-    # to Browser() constructor (no BrowserConfig wrapper needed).
     browser = Browser(
         cdp_url=f"http://localhost:{cdp_port}",
     )
 
-    # Build extended system message with ApplyPilot-specific guidance
     system_extension = (
         "You are an autonomous job application agent. "
         "Follow the task instructions precisely. "
@@ -141,35 +140,29 @@ async def run_browser_agent(
         enable_signal_handler=False,  # We manage signals ourselves in launcher.py
     )
 
-    # Track for cancellation support
     with _agent_lock:
         _active_agents[worker_id] = agent
 
     action_count = 0
     output_text = ""
+    history = None
 
     try:
         history = await agent.run(max_steps=max_steps)
 
-        # Extract results from history
         output_text = history.final_result() or ""
         action_count = len(history.action_names()) if history.action_names() else 0
 
-        # Also collect any extracted content as supplementary output
         extracted = history.extracted_content()
         if extracted:
             for item in extracted:
                 if item and item not in output_text:
                     output_text += f"\n{item}"
 
-        # Report actions to callback
         if on_action and history.action_names():
             for action_name in history.action_names():
                 on_action(action_name)
 
-        # FIX: Only log actual errors, not None entries.
-        # history.errors() returns list[str | None] with None for
-        # successful steps. Filter out None before logging.
         if history.has_errors():
             actual_errors = [err for err in history.errors() if err is not None]
             for err in actual_errors:
@@ -185,6 +178,33 @@ async def run_browser_agent(
     finally:
         with _agent_lock:
             _active_agents.pop(worker_id, None)
+
+        # Save structured JSON action trace for candidate verification
+        if job_url:
+            try:
+                import hashlib, json
+                from datetime import datetime, timezone
+                from applypilot.config import get_active_candidate_id, get_candidate_traces_dir
+                cid = candidate_id or get_active_candidate_id()
+                job_hash = hashlib.md5(job_url.encode()).hexdigest()[:12]
+                trace_path = get_candidate_traces_dir(cid) / f"{job_hash}.json"
+
+                trace_payload = {
+                    "candidate_id": cid,
+                    "job_url": job_url,
+                    "worker_id": worker_id,
+                    "action_count": action_count,
+                    "status": "applied" if "RESULT:APPLIED" in output_text else ("failed" if "RESULT:FAILED" in output_text else "completed"),
+                    "output_text": output_text[:2000],
+                    "actions": history.action_names() if history and hasattr(history, "action_names") else [],
+                    "extracted": history.extracted_content() if history and hasattr(history, "extracted_content") else [],
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                trace_path.write_text(json.dumps(trace_payload, indent=2), encoding="utf-8")
+                logger.info("[worker-%d] Action trace saved: %s", worker_id, trace_path.name)
+            except Exception as e:
+                logger.debug("[worker-%d] Could not save JSON action trace: %s", worker_id, e)
+
         try:
             await browser.close()
         except Exception:
@@ -199,25 +219,14 @@ def run_agent_sync(
     worker_id: int = 0,
     max_steps: int = 100,
     on_action: Callable[[str], None] | None = None,
+    job_url: str | None = None,
+    candidate_id: str | None = None,
 ) -> tuple[str, int]:
     """Synchronous wrapper for run_browser_agent.
 
     Creates a new event loop for each call, safe for use in
     ThreadPoolExecutor threads.
-
-    Args:
-        task_prompt: The full instruction prompt.
-        cdp_port: CDP port of the Chrome instance.
-        worker_id: Numeric worker identifier.
-        max_steps: Maximum agent steps.
-        on_action: Optional action callback.
-
-    Returns:
-        Tuple of (full_output_text, action_count).
     """
-    # FIX C3: Bind the new event loop to this thread so that all internal
-    # asyncio calls (in browser-use, playwright, httpx, etc.) can find it
-    # via asyncio.get_event_loop() / asyncio.get_running_loop().
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -228,6 +237,8 @@ def run_agent_sync(
                 worker_id=worker_id,
                 max_steps=max_steps,
                 on_action=on_action,
+                job_url=job_url,
+                candidate_id=candidate_id,
             )
         )
     finally:

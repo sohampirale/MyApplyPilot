@@ -370,6 +370,7 @@ def run_job(job: dict, port: int, worker_id: int = 0,
             worker_id=worker_id,
             max_steps=_AGENT_MAX_STEPS,
             on_action=_on_action,
+            job_url=job.get("url"),
         )
 
         elapsed = int(time.time() - start)

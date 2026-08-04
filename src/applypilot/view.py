@@ -2586,7 +2586,18 @@ def generate_job_detail_page(job_url: str) -> str:
           <li><span class="lbl">Cover Letter</span><span class="val">{cover_status}</span></li>
           <li><span class="lbl">Application</span><span class="val">{format_datetime_ist(j["applied_at"])} / {apply_status} / {escape(j["apply_error"] or "No errors")}</span></li>
           <li><span class="lbl">Apply Attempts</span><span class="val">{j["apply_attempts"] or 0}</span></li>
+          <li style="margin-top:0.75rem;"><button class="btn-secondary" onclick="toggleApplicationTrace('{url}')" style="width:100%;padding:0.4rem;font-size:0.8rem;background:rgba(96,165,250,0.15);border:1px solid rgba(96,165,250,0.3);color:#60a5fa;">📋 View Application Proof & Trace</button></li>
         </ul>
+      </div>
+
+      <div id="ai-trace-view-card" class="card hidden" style="display:none;margin-top:1rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+          <h3 style="margin:0;">📜 Application Execution Proof & Trace</h3>
+          <button class="btn-secondary" onclick="hideApplicationTrace()" style="font-size:0.75rem;padding:0.25rem 0.5rem;">Close Trace</button>
+        </div>
+        <div id="ai-trace-display-box" style="font-family:monospace;font-size:0.85rem;background:rgba(0,0,0,0.4);padding:1rem;border-radius:8px;max-height:400px;overflow-y:auto;color:#e2e8f0;border:1px solid rgba(255,255,255,0.08);">
+          Loading trace...
+        </div>
       </div>
     </div>
   </div>
@@ -2678,6 +2689,58 @@ function copyAIResumeText() {{
   }}).catch(() => {{
     showToast('Failed to copy text');
   }});
+}}
+
+async function toggleApplicationTrace(jobUrl) {{
+  const container = document.getElementById('ai-trace-view-card');
+  const displayBox = document.getElementById('ai-trace-display-box');
+  if (!container) return;
+
+  const isHidden = container.style.display === 'none' || container.classList.contains('hidden');
+
+  if (!isHidden) {{
+    container.style.display = 'none';
+    container.classList.add('hidden');
+    return;
+  }}
+
+  container.style.display = 'block';
+  container.classList.remove('hidden');
+  displayBox.innerHTML = '<div style="color:#9ca3af;">⏳ Loading application execution trace...</div>';
+
+  try {{
+    const res = await fetch('/api/trace?url=' + encodeURIComponent(jobUrl));
+    const data = await res.json();
+    if (data.status === 'ok' && data.has_trace) {{
+      const trace = data.trace;
+      let html = `<div style="margin-bottom:0.5rem;color:#34d399;"><strong>Status:</strong> ${{(trace.status || 'unknown').toUpperCase()}} | <strong>Duration:</strong> ${{(trace.duration_ms || 0)/1000}}s | <strong>Actions:</strong> ${{trace.action_count || 0}}</div>`;
+      if (trace.actions && trace.actions.length > 0) {{
+        html += '<div style="margin-bottom:0.5rem;"><strong>Step Actions Taken:</strong></div><ol style="margin-top:0.25rem;padding-left:1.25rem;line-height:1.6;">';
+        trace.actions.forEach(a => {{
+          html += `<li>${{a}}</li>`;
+        }});
+        html += '</ol>';
+      }} else {{
+        html += '<div style="color:#9ca3af;">No detailed step actions recorded for this run.</div>';
+      }}
+      if (trace.output_text) {{
+        html += `<div style="margin-top:0.75rem;padding-top:0.5rem;border-top:1px solid rgba(255,255,255,0.1);"><strong>Agent Output Summary:</strong><pre style="white-space:pre-wrap;margin-top:0.25rem;color:#cbd5e1;max-height:200px;overflow-y:auto;background:rgba(0,0,0,0.3);padding:0.5rem;border-radius:6px;">${{trace.output_text}}</pre></div>`;
+      }}
+      displayBox.innerHTML = html;
+    }} else {{
+      displayBox.innerHTML = '<div style="color:#fca5a5;padding:0.5rem;">No execution trace found for this job yet. Traces are generated automatically when AI Auto-Apply runs for this job.</div>';
+    }}
+  }} catch (e) {{
+    displayBox.innerHTML = '<div style="color:#fca5a5;">Error fetching application trace.</div>';
+  }}
+}}
+
+function hideApplicationTrace() {{
+  const container = document.getElementById('ai-trace-view-card');
+  if (container) {{
+    container.style.display = 'none';
+    container.classList.add('hidden');
+  }}
 }}
 
 async function tailorResumeOnly(btn, jobUrl) {{

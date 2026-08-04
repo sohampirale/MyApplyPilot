@@ -99,6 +99,20 @@ def get_candidate_cover_letter_dir(candidate_id: str | None = None) -> Path:
     return d
 
 
+def get_candidate_logs_dir(candidate_id: str | None = None) -> Path:
+    """Logs directory for the given (or active) candidate."""
+    d = get_candidate_dir(candidate_id) / "logs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def get_candidate_traces_dir(candidate_id: str | None = None) -> Path:
+    """Action traces directory for the given (or active) candidate."""
+    d = get_candidate_dir(candidate_id) / "traces"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def migrate_legacy_profile() -> str | None:
     """Migrate single-user legacy profile into candidates/default/ directory.
 
