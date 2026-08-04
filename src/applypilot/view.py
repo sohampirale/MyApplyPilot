@@ -2110,7 +2110,7 @@ function togglePasswordMask() {{
   if (el.dataset.masked === 'true') {{
     el.textContent = el.dataset.real;
     el.dataset.masked = 'false';
-    btn.textContent = '🙈 Hide';
+    btn.textContent = 'Hide';
   }} else {{
     el.textContent = '••••••••';
     el.dataset.masked = 'true';
@@ -2526,7 +2526,7 @@ def generate_job_detail_page(job_url: str) -> str:
         </h3>
         <div style="display:flex;gap:0.5rem;align-items:center;">
           <button class="btn-secondary" onclick="copyAIResumeText()" style="font-size:0.8rem;padding:0.35rem 0.75rem;">📋 Copy Resume Text</button>
-          <button class="btn-secondary" onclick="hideAIResumeView('{url}')" style="font-size:0.8rem;padding:0.35rem 0.75rem;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);">🙈 Hide Resume</button>
+          <button class="btn-secondary" onclick="hideAIResumeView('{url}')" style="font-size:0.8rem;padding:0.35rem 0.75rem;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);">Hide Resume</button>
         </div>
       </div>
       <div id="ai-resume-display-box" style="background:rgba(15,23,42,0.9);border:1px solid rgba(96,165,250,0.25);border-radius:12px;padding:1rem;min-height:150px;color:#cbd5e1;font-size:0.9rem;">
@@ -2620,7 +2620,7 @@ async function toggleAIResumeView(jobUrl) {{
 
   container.style.display = 'block';
   container.classList.remove('hidden');
-  if (btn) btn.innerHTML = '🙈 Hide AI Generated Resume';
+  if (btn) btn.innerHTML = 'Hide AI Generated Resume';
   displayBox.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;padding:2rem;color:#9ca3af;">⏳ Loading AI Generated Resume...</div>';
 
   try {{
