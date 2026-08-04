@@ -450,7 +450,15 @@ def build_prompt(job: dict, tailored_resume: str,
     # --- Resolve resume PDF path ---
     resume_path = job.get("tailored_resume_path")
     if not resume_path:
-        raise ValueError(f"No tailored resume for job: {job.get('title', 'unknown')}")
+        from applypilot.config import get_candidate_resume_pdf_path, get_active_candidate_id, RESUME_PDF_PATH
+        cid = config.get_active_candidate_id()
+        cand_pdf = get_candidate_resume_pdf_path(cid)
+        if cand_pdf and cand_pdf.exists():
+            resume_path = str(cand_pdf)
+        elif RESUME_PDF_PATH.exists():
+            resume_path = str(RESUME_PDF_PATH)
+        else:
+            raise ValueError(f"No tailored resume or master resume PDF found for candidate")
 
     src_pdf = Path(resume_path).with_suffix(".pdf").resolve()
     if not src_pdf.exists():

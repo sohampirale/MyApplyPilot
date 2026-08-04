@@ -319,6 +319,27 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         'applied', 'expired', 'captcha', 'login_issue',
         'failed:reason', or 'skipped'.
     """
+    cid = config.get_active_candidate_id()
+    conn = get_connection()
+
+    # 1. Resolve tailored_resume_path from candidate_scores table if missing
+    if not job.get("tailored_resume_path"):
+        cs_row = conn.execute(
+            "SELECT tailored_resume_path FROM candidate_scores WHERE candidate_id = ? AND job_url = ?",
+            (cid, job.get("url"))
+        ).fetchone()
+        if cs_row and cs_row["tailored_resume_path"]:
+            job["tailored_resume_path"] = cs_row["tailored_resume_path"]
+
+    # 2. Fallback to candidate's master resume PDF if missing
+    if not job.get("tailored_resume_path"):
+        from applypilot.config import get_candidate_resume_pdf_path, RESUME_PDF_PATH
+        cand_pdf = get_candidate_resume_pdf_path(cid)
+        if cand_pdf and cand_pdf.exists():
+            job["tailored_resume_path"] = str(cand_pdf)
+        elif RESUME_PDF_PATH.exists():
+            job["tailored_resume_path"] = str(RESUME_PDF_PATH)
+
     # Read tailored resume text
     resume_path = job.get("tailored_resume_path")
     txt_path = Path(resume_path).with_suffix(".txt") if resume_path else None
