@@ -11,13 +11,29 @@ Generates a self-contained HTML dashboard with:
 
 from __future__ import annotations
 
-import os
-import webbrowser
+from datetime import datetime, timezone, timedelta
 from html import escape
 from pathlib import Path
 from urllib.parse import quote as url_quote
 
 from rich.console import Console
+
+
+def format_datetime_ist(ts_str: str | None) -> str:
+    """Format an ISO timestamp into Indian Standard Time (IST) human readable format.
+    E.g. '2026-08-01T01:28:58.201567+00:00' -> '1 August 2026, 06:58 AM IST'
+    """
+    if not ts_str or str(ts_str).strip() in ("", "-"):
+        return "-"
+    try:
+        ts_clean = str(ts_str).strip()
+        dt = datetime.fromisoformat(ts_clean.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        ist = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+        return f"{ist.day} {ist.strftime('%B %Y, %I:%M %p IST')}"
+    except Exception:
+        return str(ts_str)
 
 from applypilot.config import (
     APP_DIR, DB_PATH, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH,
@@ -2557,9 +2573,9 @@ def generate_job_detail_page(job_url: str) -> str:
           <li><span class="lbl">Discovery Strategy</span><span class="val">{strategy}</span></li>
           <li><span class="lbl">Job URL</span><span class="val"><a href="{url}" target="_blank">{(url[:40] + '...') if len(url) > 40 else url}</a></span></li>
           <li><span class="lbl">Application URL</span><span class="val"><a href="{apply_url}" target="_blank">{(apply_url[:40] + '...') if len(apply_url) > 40 else apply_url}</a></span></li>
-          <li><span class="lbl">Discovered</span><span class="val">{escape(str(j["discovered_at"]) if j["discovered_at"] else "-")}</span></li>
-          <li><span class="lbl">Enriched</span><span class="val">{escape(str(j["detail_scraped_at"]) if j["detail_scraped_at"] else "-")}</span></li>
-          <li><span class="lbl">Scored</span><span class="val">{escape(str(j["scored_at"]) if j["scored_at"] else "-")}</span></li>
+          <li><span class="lbl">Discovered</span><span class="val">{format_datetime_ist(j["discovered_at"])}</span></li>
+          <li><span class="lbl">Enriched</span><span class="val">{format_datetime_ist(j["detail_scraped_at"])}</span></li>
+          <li><span class="lbl">Scored</span><span class="val">{format_datetime_ist(j["scored_at"])}</span></li>
         </ul>
       </div>
       
@@ -2568,7 +2584,7 @@ def generate_job_detail_page(job_url: str) -> str:
         <ul class="meta-list">
           <li><span class="lbl">Resume</span><span class="val">{resume_status}</span></li>
           <li><span class="lbl">Cover Letter</span><span class="val">{cover_status}</span></li>
-          <li><span class="lbl">Application</span><span class="val">{applied_at} / {apply_status} / {escape(j["apply_error"] or "No errors")}</span></li>
+          <li><span class="lbl">Application</span><span class="val">{format_datetime_ist(j["applied_at"])} / {apply_status} / {escape(j["apply_error"] or "No errors")}</span></li>
           <li><span class="lbl">Apply Attempts</span><span class="val">{j["apply_attempts"] or 0}</span></li>
         </ul>
       </div>
