@@ -2599,6 +2599,7 @@ function copyLink(url) {{
   }}).catch(() => {{
     showToast('Failed to copy link');
   }});
+}}
 let currentAIResumeText = '';
 
 async function toggleAIResumeView(jobUrl) {{
