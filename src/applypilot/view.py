@@ -70,10 +70,25 @@ def _build_profile_page_html(profile: dict, resume_text: str, resume_pdf_b64: st
     permit = escape(str(work_auth.get("work_permit_type") or "Citizen"))
     start_date = escape(str(avail.get("earliest_start_date") or "Immediately"))
 
-    exp_sal = escape(str(comp.get("salary_expectation") or "N/A"))
+    def _format_inr(val_str: str) -> str:
+        try:
+            num = int(float(str(val_str).replace(",", "").replace("INR", "").strip()))
+            if num >= 100000:
+                lakhs = num / 100000
+                return f"₹{lakhs:.1f} LPA"
+            return f"₹{num:,}"
+        except (ValueError, TypeError):
+            return str(val_str)
+
+    raw_exp_sal = comp.get("salary_expectation") or ""
+    raw_min_sal = comp.get("salary_range_min") or ""
+    raw_max_sal = comp.get("salary_range_max") or ""
     curr = escape(str(comp.get("salary_currency") or "INR"))
-    min_sal = escape(str(comp.get("salary_range_min") or "N/A"))
-    max_sal = escape(str(comp.get("salary_range_max") or "N/A"))
+
+    exp_sal = f"{_format_inr(raw_exp_sal)} ({int(float(raw_exp_sal)):,} {curr})" if raw_exp_sal and raw_exp_sal.isdigit() else escape(str(raw_exp_sal or "N/A"))
+    min_sal_fmt = _format_inr(raw_min_sal) if raw_min_sal else "N/A"
+    max_sal_fmt = _format_inr(raw_max_sal) if raw_max_sal else "N/A"
+    sal_range = f"{min_sal_fmt} - {max_sal_fmt} {curr}"
 
     yoe = escape(str(exp.get("years_of_experience_total") or "0"))
     edu = escape(str(exp.get("education_level") or "Bachelor's"))
@@ -148,8 +163,8 @@ def _build_profile_page_html(profile: dict, resume_text: str, resume_pdf_b64: st
         <h3 class="profile-card-title">💼 Career & Compensation</h3>
         <div class="profile-field"><span class="profile-field-label">Target Role:</span><span class="profile-field-value" style="color:#60a5fa;font-weight:600;">{target_role}</span></div>
         <div class="profile-field"><span class="profile-field-label">Experience:</span><span class="profile-field-value">{yoe} years &middot; {edu}</span></div>
-        <div class="profile-field"><span class="profile-field-label">Target Salary:</span><span class="profile-field-value" style="color:#10b981;font-weight:600;">{exp_sal} {curr}</span></div>
-        <div class="profile-field"><span class="profile-field-label">Acceptable Range:</span><span class="profile-field-value">{min_sal} - {max_sal} {curr}</span></div>
+        <div class="profile-field"><span class="profile-field-label">Target Salary:</span><span class="profile-field-value" style="color:#10b981;font-weight:600;">{exp_sal}</span></div>
+        <div class="profile-field"><span class="profile-field-label">Acceptable Range:</span><span class="profile-field-value">{sal_range}</span></div>
         <div class="profile-field"><span class="profile-field-label">Authorized to Work:</span><span class="profile-field-value">{auth_str} ({permit})</span></div>
         <div class="profile-field"><span class="profile-field-label">Start Date:</span><span class="profile-field-value">{start_date}</span></div>
       </div>
@@ -1352,16 +1367,112 @@ def generate_dashboard(output_path: str | None = None) -> str:
     font-size: 0.95rem;
     font-weight: 700;
     color: #a78bfa;
-    margin-bottom: 1rem;
+    margin-bottom: 0.85rem;
     padding-bottom: 0.5rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }}
+
+  .profile-field {{
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }}
+  .profile-field:last-child {{
+    border-bottom: none;
+  }}
+  .profile-field-label {{
+    color: var(--text-muted);
+    font-weight: 500;
+    min-width: 130px;
+    flex-shrink: 0;
+  }}
+  .profile-field-value {{
+    color: var(--text-main);
+    font-weight: 500;
+    text-align: right;
+    word-break: break-word;
+  }}
+  .profile-field-value a {{
+    color: #60a5fa;
+    text-decoration: none;
+  }}
+  .profile-field-value a:hover {{
+    text-decoration: underline;
   }}
 
   .profile-field-stacked {{
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
-    margin-bottom: 0.75rem;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+  }}
+  .profile-field-stacked:last-child {{
+    margin-bottom: 0;
+  }}
+
+  .skill-chips {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.2rem;
+  }}
+  .skill-chip {{
+    display: inline-block;
+    padding: 0.35rem 0.75rem;
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.35);
+    color: #93c5fd;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+  }}
+  .skill-chip.framework {{
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.35);
+    color: #6ee7b7;
+  }}
+  .skill-chip.tool {{
+    background: rgba(245, 158, 11, 0.15);
+    border-color: rgba(245, 158, 11, 0.35);
+    color: #fcd34d;
+  }}
+
+  .password-field {{
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    justify-content: flex-end;
+  }}
+  .password-toggle {{
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--text-muted);
+    padding: 0.2rem 0.55rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }}
+  .password-toggle:hover {{ background: rgba(255, 255, 255, 0.18); color: #fff; }}
+
+  .privacy-notice {{
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 12px;
+    padding: 0.85rem 1rem;
+    font-size: 0.8rem;
+    color: #6ee7b7;
+    margin-top: 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    line-height: 1.5;
   }}
 
   .resume-card-container {{
