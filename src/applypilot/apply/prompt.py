@@ -611,7 +611,7 @@ RESULT:FAILED:reason -- any other failure (brief reason)
 
 == WHEN TO GIVE UP ==
 - Same page after 3 attempts with no progress -> call done("RESULT:FAILED:stuck")
-- Job is closed/expired/page says "no longer accepting" -> call done("RESULT:EXPIRED")
+- Job is closed/expired/page says "no longer accepting" or "The page you are looking for doesn't exist" -> call done("RESULT:EXPIRED")
 - Page is broken/500 error/blank -> call done("RESULT:FAILED:page_error")
 Stop immediately. Output your RESULT code in done(). Do not loop."""
 
