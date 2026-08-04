@@ -578,10 +578,11 @@ If something unexpected happens and these instructions don't cover it, figure it
 2. Examine the page layout. Check for location info. If not eligible, call done("RESULT:FAILED:not_eligible_location") and stop.
 3. Find and click the Apply button.
 4. Login wall?
-   4a. FIRST: check the URL. If you landed on {', '.join(blocked_sso)}, or any SSO/OAuth page -> STOP. Call done("RESULT:FAILED:sso_required"). Do NOT try to sign in to Google/Microsoft/SSO.
-   4b. Regular login form (employer's own site)? Try sign in: {personal['email']} / {personal.get('password', '')}
-   4c. Sign in failed? Try sign up with same email and password.
-   4d. All failed? Call done("RESULT:FAILED:login_issue"). Do not loop.
+   4a. FIRST: Check for "Autofill with Resume", "Apply as Guest", or "Quick Apply" buttons before clicking Apply Manually/Sign In. If available, use "Autofill with Resume" or "Apply as Guest" to bypass login!
+   4b. Check the URL. If you landed on {', '.join(blocked_sso)}, or any SSO/OAuth page -> STOP. Call done("RESULT:FAILED:sso_required"). Do NOT try to sign in to Google/Microsoft/SSO.
+   4c. Regular login form (employer's own site)? Try sign in: {personal['email']} / {personal.get('password', 'Soham@1234')}
+   4d. Sign in failed? Try sign up / Create Account with email {personal['email']} and password {personal.get('password', 'Soham@1234')}Pass! (ensure uppercase, lowercase, number, and special symbol). Fill all required registration fields, confirm password, check Terms agreement, and click Create Account.
+   4e. All failed? Call done("RESULT:FAILED:login_issue"). Do not loop.
 5. Upload resume. ALWAYS upload fresh using upload_file with the PDF path above: {pdf_path}. This is the tailored resume for THIS job. Non-negotiable.
 6. Upload cover letter if there's a field for it. Text field -> paste cover letter text. File field -> upload cover letter PDF path: {cl_upload_path or "N/A"}.
 7. Check ALL pre-filled fields. ATS systems parse your resume and auto-fill -- fix any errors against APPLICANT PROFILE and TAILORED RESUME.
