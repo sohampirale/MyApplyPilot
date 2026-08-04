@@ -581,7 +581,7 @@ If something unexpected happens and these instructions don't cover it, figure it
    4a. FIRST: Check for "Autofill with Resume", "Apply as Guest", or "Quick Apply" buttons before clicking Apply Manually/Sign In. If available, use "Autofill with Resume" or "Apply as Guest" to bypass login!
    4b. Check the URL. If you landed on {', '.join(blocked_sso)}, or any SSO/OAuth page -> STOP. Call done("RESULT:FAILED:sso_required"). Do NOT try to sign in to Google/Microsoft/SSO.
    4c. Regular login form (employer's own site)? Try sign in: {personal['email']} / {personal.get('password', 'Soham@1234')}
-   4d. Sign in failed? Try sign up / Create Account with email {personal['email']} and password {personal.get('password', 'Soham@1234')}Pass! (ensure uppercase, lowercase, number, and special symbol). Fill all required registration fields, confirm password, check Terms agreement, and click Create Account.
+   4d. Sign in failed? Click "Create Account" / "Register". Fill Email ({personal['email']}), Password ({personal.get('password', 'Soham@Workday2026!')}), and Verify New Password ({personal.get('password', 'Soham@Workday2026!')}). CRITICAL: You MUST click the consent/terms checkbox (e.g. "I acknowledge the above and, where legally required, provide my consent"). Verify both password fields match and the checkbox is checked before clicking Create Account.
    4e. All failed? Call done("RESULT:FAILED:login_issue"). Do not loop.
 5. Upload resume. ALWAYS upload fresh using upload_file with the PDF path above: {pdf_path}. This is the tailored resume for THIS job. Non-negotiable.
 6. Upload cover letter if there's a field for it. Text field -> paste cover letter text. File field -> upload cover letter PDF path: {cl_upload_path or "N/A"}.
@@ -601,6 +601,7 @@ RESULT:FAILED:not_eligible_work_auth -- requires unauthorized work location
 RESULT:FAILED:reason -- any other failure (brief reason)
 
 == FORM TRICKS ==
+- Workday Sign-Up: Fill Email, Password, AND "Verify New Password". MANDATORY: Click the consent checkbox ("I acknowledge the above and, where legally required, provide my consent"). Passwords MUST have uppercase, lowercase, number & special char (e.g. Soham@Workday2026!).
 - Multi-page forms (Workday, Taleo, iCIMS): fill all fields on each page, then click Next/Continue. Repeat until final review page.
 - "Upload your resume" pre-fill page (Workday, Lever, etc.): Click "Select file" or upload area, use upload_file with resume PDF path. Wait for parsing to finish. Then click Next/Continue to reach the actual form.
 - Dropdown won't fill? Click to open it, then click the matching option.
