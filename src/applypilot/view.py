@@ -2479,6 +2479,7 @@ def generate_job_detail_page(job_url: str) -> str:
   .toast-container {{ position: fixed; bottom: 2rem; right: 2rem; z-index: 1000; display: flex; flex-direction: column; gap: 0.5rem; }}
   .toast {{ background: #1e293b; border: 1px solid #3b82f6; color: #ffffff; padding: 0.75rem 1.25rem; border-radius: 12px; font-size: 0.85rem; font-weight: 500; box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 0.5rem; animation: toastIn 0.3s ease-out forwards; }}
   @keyframes toastIn {{ from {{ opacity: 0; transform: translateY(10px); }} to {{ opacity: 1; transform: translateY(0); }} }}
+  .hidden {{ display: none !important; }}
 </style>
 </head>
 <body>
@@ -2518,7 +2519,7 @@ def generate_job_detail_page(job_url: str) -> str:
     </div>
 
     <!-- Inline AI Resume Viewer Container -->
-    <div id="ai-resume-view-card" class="hidden" style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border-card);animation:fadeIn 0.3s ease-out;">
+    <div id="ai-resume-view-card" class="hidden" style="display:none;margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border-card);animation:fadeIn 0.3s ease-out;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
         <h3 style="font-family:var(--font-heading);font-size:1.1rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:0.5rem;">
           <span style="font-size:1.2rem;">✨</span> AI-Generated Tailored Resume
@@ -2607,12 +2608,16 @@ async function toggleAIResumeView(jobUrl) {{
 
   if (!container) return;
 
-  if (!container.classList.contains('hidden')) {{
+  const isHidden = container.style.display === 'none' || container.classList.contains('hidden');
+
+  if (!isHidden) {{
+    container.style.display = 'none';
     container.classList.add('hidden');
     if (btn) btn.innerHTML = '📄 Show AI Generated Resume';
     return;
   }}
 
+  container.style.display = 'block';
   container.classList.remove('hidden');
   if (btn) btn.innerHTML = '🙈 Hide AI Generated Resume';
   displayBox.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;padding:2rem;color:#9ca3af;">⏳ Loading AI Generated Resume...</div>';
@@ -2638,7 +2643,10 @@ async function toggleAIResumeView(jobUrl) {{
 function hideAIResumeView(jobUrl) {{
   const container = document.getElementById('ai-resume-view-card');
   const btn = document.getElementById('toggle-ai-resume-btn');
-  if (container) container.classList.add('hidden');
+  if (container) {{
+    container.style.display = 'none';
+    container.classList.add('hidden');
+  }}
   if (btn) btn.innerHTML = '📄 Show AI Generated Resume';
 }}
 
