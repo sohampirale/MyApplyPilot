@@ -25,8 +25,23 @@ from applypilot.database import get_connection
 console = Console()
 
 
-def _build_profile_modal_html(profile: dict, resume_text: str) -> str:
-    """Build HTML for candidate profile modal dialog."""
+def _clean_resume_spacing(text: str) -> str:
+    """Clean up spacing artifacts in resume text if present."""
+    import re
+    lines = text.splitlines()
+    cleaned = []
+    for line in lines:
+        if re.search(r'\b[A-Za-z] [A-Za-z] [A-Za-z]\b', line):
+            parts = line.split('  ')
+            cleaned_parts = [re.sub(r'(?<=\S) (?=\S)', '', part) for part in parts]
+            cleaned.append('  '.join(cleaned_parts))
+        else:
+            cleaned.append(line)
+    return "\n".join(cleaned)
+
+
+def _build_profile_page_html(profile: dict, resume_text: str) -> str:
+    """Build full-screen Candidate Profile Page view."""
     personal = profile.get("personal", {})
     work_auth = profile.get("work_authorization", {})
     comp = profile.get("compensation", {})
@@ -73,103 +88,110 @@ def _build_profile_modal_html(profile: dict, resume_text: str) -> str:
     fw_chips = "".join(f'<span class="skill-chip framework">{escape(str(s))}</span>' for s in frameworks)
     tool_chips = "".join(f'<span class="skill-chip tool">{escape(str(s))}</span>' for s in tools)
 
-    resume_display = escape(resume_text) if resume_text else "No master resume found at ~/.applypilot/resume.txt"
+    cleaned_resume = _clean_resume_spacing(resume_text) if resume_text else "No master resume found at ~/.applypilot/resume.txt"
+    resume_display = escape(cleaned_resume)
 
     return f"""
-<dialog id="profile-modal">
-  <div class="profile-modal-inner">
-    <div class="profile-modal-header">
-      <h2><span>👤</span> {full_name} <span style="font-size:0.8rem;font-weight:500;color:var(--text-muted);">({pref_name})</span></h2>
-      <button class="modal-close-btn" onclick="closeProfileModal()">✕</button>
-    </div>
-
-    <div class="profile-tabs">
-      <button class="profile-tab active" data-tab="personal" onclick="switchProfileTab('personal')">🧑 Personal & Contact</button>
-      <button class="profile-tab" data-tab="career" onclick="switchProfileTab('career')">💼 Career & Skills</button>
-      <button class="profile-tab" data-tab="resume" onclick="switchProfileTab('resume')">📄 Master Resume</button>
-      <button class="profile-tab" data-tab="security" onclick="switchProfileTab('security')">🔒 Security & EEO</button>
-    </div>
-
-    <div id="profile-tab-personal" class="profile-tab-content active">
-      <div class="profile-section-title">Contact Information</div>
-      <div class="profile-field"><span class="profile-field-label">Email:</span><span class="profile-field-value">{email}</span></div>
-      <div class="profile-field"><span class="profile-field-label">Phone:</span><span class="profile-field-value">{phone}</span></div>
-      <div class="profile-field"><span class="profile-field-label">Location:</span><span class="profile-field-value">{location}</span></div>
-      <div class="profile-field"><span class="profile-field-label">Full Address:</span><span class="profile-field-value">{address}</span></div>
-
-      <div class="profile-section-title">Social & Online Profiles</div>
-      <div class="profile-field"><span class="profile-field-label">LinkedIn:</span><span class="profile-field-value">{f'<a href="{linkedin}" target="_blank">{linkedin}</a>' if linkedin else 'Not provided'}</span></div>
-      <div class="profile-field"><span class="profile-field-label">GitHub:</span><span class="profile-field-value">{f'<a href="{github}" target="_blank">{github}</a>' if github else 'Not provided'}</span></div>
-      <div class="profile-field"><span class="profile-field-label">Portfolio:</span><span class="profile-field-value">{f'<a href="{portfolio}" target="_blank">{portfolio}</a>' if portfolio else 'Not provided'}</span></div>
-
-      <div class="profile-section-title">Work Authorization & Availability</div>
-      <div class="profile-field"><span class="profile-field-label">Authorized to Work:</span><span class="profile-field-value">{auth_str} ({permit})</span></div>
-      <div class="profile-field"><span class="profile-field-label">Sponsorship Required:</span><span class="profile-field-value">{sponsorship}</span></div>
-      <div class="profile-field"><span class="profile-field-label">Earliest Start Date:</span><span class="profile-field-value">{start_date}</span></div>
-    </div>
-
-    <div id="profile-tab-career" class="profile-tab-content">
-      <div class="profile-section-title">Career Preferences</div>
-      <div class="profile-field"><span class="profile-field-label">Target Role:</span><span class="profile-field-value" style="color:#60a5fa;font-weight:600;">{target_role}</span></div>
-      <div class="profile-field"><span class="profile-field-label">Current Title:</span><span class="profile-field-value">{curr_title}</span></div>
-      <div class="profile-field"><span class="profile-field-label">Experience:</span><span class="profile-field-value">{yoe} years</span></div>
-      <div class="profile-field"><span class="profile-field-label">Education:</span><span class="profile-field-value">{edu}</span></div>
-
-      <div class="profile-section-title">Compensation Expectations</div>
-      <div class="profile-field"><span class="profile-field-label">Target Salary:</span><span class="profile-field-value" style="color:#10b981;font-weight:600;">{exp_sal} {curr}</span></div>
-      <div class="profile-field"><span class="profile-field-label">Acceptable Range:</span><span class="profile-field-value">{min_sal} - {max_sal} {curr}</span></div>
-
-      <div class="profile-section-title">Technical Skill Boundary</div>
-      <div class="profile-field">
-        <span class="profile-field-label">Languages:</span>
-        <div class="profile-field-value"><div class="skill-chips">{lang_chips or 'None'}</div></div>
-      </div>
-      <div class="profile-field">
-        <span class="profile-field-label">Frameworks:</span>
-        <div class="profile-field-value"><div class="skill-chips">{fw_chips or 'None'}</div></div>
-      </div>
-      <div class="profile-field">
-        <span class="profile-field-label">Tools & Databases:</span>
-        <div class="profile-field-value"><div class="skill-chips">{tool_chips or 'None'}</div></div>
+<!-- Full-Screen Candidate Profile Page -->
+<div id="profile-page-view" class="profile-page-container hidden">
+  <div class="profile-page-navbar">
+    <div class="profile-nav-left">
+      <button class="btn-back" onclick="showDashboardView()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Back to Dashboard
+      </button>
+      <div class="profile-page-title-group">
+        <h1 class="profile-page-title">👤 Candidate Profile</h1>
+        <span class="profile-page-subtitle">{full_name} &middot; {location}</span>
       </div>
     </div>
-
-    <div id="profile-tab-resume" class="profile-tab-content">
-      <div class="profile-section-title" style="display:flex;justify-content:space-between;align-items:center;">
-        <span>Master Resume (resume.txt)</span>
-        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:normal;">~/.applypilot/resume.txt</span>
-      </div>
-      <pre class="resume-viewer">{resume_display}</pre>
+    <div class="profile-nav-right">
+      <span class="profile-pill-badge">{target_role}</span>
     </div>
+  </div>
 
-    <div id="profile-tab-security" class="profile-tab-content">
-      <div class="profile-section-title">Job Portal Credentials</div>
-      <div class="profile-field">
-        <span class="profile-field-label">Stored Password:</span>
-        <div class="profile-field-value password-field">
-          <span id="profile-password-value" data-real="{escape(password)}" data-masked="true">••••••••</span>
-          <button id="profile-password-toggle" class="password-toggle" onclick="togglePasswordMask()">👁 Show</button>
+  <div class="profile-page-content">
+    <!-- Left Column: Candidate Metadata Cards -->
+    <div class="profile-sidebar-col">
+      
+      <!-- Personal & Contact Card -->
+      <div class="profile-card">
+        <h3 class="profile-card-title">🧑 Personal & Contact</h3>
+        <div class="profile-field"><span class="profile-field-label">Full Name:</span><span class="profile-field-value">{full_name} ({pref_name})</span></div>
+        <div class="profile-field"><span class="profile-field-label">Email:</span><span class="profile-field-value">{email}</span></div>
+        <div class="profile-field"><span class="profile-field-label">Phone:</span><span class="profile-field-value">{phone}</span></div>
+        <div class="profile-field"><span class="profile-field-label">Location:</span><span class="profile-field-value">{location}</span></div>
+        <div class="profile-field"><span class="profile-field-label">Full Address:</span><span class="profile-field-value">{address}</span></div>
+        <div class="profile-field"><span class="profile-field-label">LinkedIn:</span><span class="profile-field-value">{f'<a href="{linkedin}" target="_blank">{linkedin}</a>' if linkedin else 'Not provided'}</span></div>
+        <div class="profile-field"><span class="profile-field-label">GitHub:</span><span class="profile-field-value">{f'<a href="{github}" target="_blank">{github}</a>' if github else 'Not provided'}</span></div>
+      </div>
+
+      <!-- Career & Compensation Card -->
+      <div class="profile-card">
+        <h3 class="profile-card-title">💼 Career & Compensation</h3>
+        <div class="profile-field"><span class="profile-field-label">Target Role:</span><span class="profile-field-value" style="color:#60a5fa;font-weight:600;">{target_role}</span></div>
+        <div class="profile-field"><span class="profile-field-label">Experience:</span><span class="profile-field-value">{yoe} years &middot; {edu}</span></div>
+        <div class="profile-field"><span class="profile-field-label">Target Salary:</span><span class="profile-field-value" style="color:#10b981;font-weight:600;">{exp_sal} {curr}</span></div>
+        <div class="profile-field"><span class="profile-field-label">Acceptable Range:</span><span class="profile-field-value">{min_sal} - {max_sal} {curr}</span></div>
+        <div class="profile-field"><span class="profile-field-label">Authorized to Work:</span><span class="profile-field-value">{auth_str} ({permit})</span></div>
+        <div class="profile-field"><span class="profile-field-label">Start Date:</span><span class="profile-field-value">{start_date}</span></div>
+      </div>
+
+      <!-- Skills Card -->
+      <div class="profile-card">
+        <h3 class="profile-card-title">🛠 Technical Skill Boundary</h3>
+        <div class="profile-field-stacked">
+          <span class="profile-field-label">Languages:</span>
+          <div class="skill-chips">{lang_chips or 'None'}</div>
+        </div>
+        <div class="profile-field-stacked">
+          <span class="profile-field-label">Frameworks:</span>
+          <div class="skill-chips">{fw_chips or 'None'}</div>
+        </div>
+        <div class="profile-field-stacked">
+          <span class="profile-field-label">Tools & Databases:</span>
+          <div class="skill-chips">{tool_chips or 'None'}</div>
         </div>
       </div>
 
-      <div class="profile-section-title">Voluntary EEO Declarations</div>
-      <div class="profile-field"><span class="profile-field-label">Gender:</span><span class="profile-field-value">{escape(str(eeo.get("gender") or "Decline to self-identify"))}</span></div>
-      <div class="profile-field"><span class="profile-field-label">Race / Ethnicity:</span><span class="profile-field-value">{escape(str(eeo.get("race_ethnicity") or "Decline to self-identify"))}</span></div>
-      <div class="profile-field"><span class="profile-field-label">Veteran Status:</span><span class="profile-field-value">{escape(str(eeo.get("veteran_status") or "Decline to self-identify"))}</span></div>
-      <div class="profile-field"><span class="profile-field-label">Disability Status:</span><span class="profile-field-value">{escape(str(eeo.get("disability_status") or "Decline to self-identify"))}</span></div>
-
-      <div class="privacy-notice">
-        <span>🔒</span>
-        <div>
-          <strong>Local Privacy Guarantee</strong><br>
-          All candidate information is stored strictly on your local device at <code>~/.applypilot/profile.json</code>.
-          ApplyPilot never sends your personal credentials to external servers except when auto-filling forms directly on job portals during application submission.
+      <!-- Security & Credentials Card -->
+      <div class="profile-card">
+        <h3 class="profile-card-title">🔒 Credentials & Privacy</h3>
+        <div class="profile-field">
+          <span class="profile-field-label">Stored Password:</span>
+          <div class="profile-field-value password-field">
+            <span id="profile-password-value" data-real="{escape(password)}" data-masked="true">••••••••</span>
+            <button id="profile-password-toggle" class="password-toggle" onclick="togglePasswordMask()">👁 Show</button>
+          </div>
         </div>
+        <div class="privacy-notice">
+          <span>🔒</span>
+          <div>
+            <strong>Local Privacy Guarantee</strong><br>
+            All candidate data is stored locally at <code>~/.applypilot/profile.json</code> and <code>resume.txt</code>. It never leaves your device.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Full Master Resume Viewer -->
+    <div class="profile-main-col">
+      <div class="profile-card resume-card-container">
+        <div class="resume-card-header">
+          <div>
+            <h3 class="profile-card-title" style="margin:0;border-bottom:none;">📄 Master Resume</h3>
+            <span style="font-size:0.75rem;color:var(--text-muted);">Stored at ~/.applypilot/resume.txt</span>
+          </div>
+          <button class="btn-secondary" onclick="copyResumeText()">📋 Copy Resume Text</button>
+        </div>
+        <pre id="master-resume-text-el" class="resume-viewer-full">{resume_display}</pre>
       </div>
     </div>
   </div>
-</dialog>
+</div>
 """
+
 
 
 def generate_dashboard(output_path: str | None = None) -> str:
@@ -1156,235 +1178,163 @@ def generate_dashboard(output_path: str | None = None) -> str:
     margin-bottom: 1.25rem;
   }}
 
-  /* ── Profile Button & Modal ─────────────────────────────── */
-  .nav-right {{
+  /* ── Full-Screen Profile Page ─────────────────────────────── */
+  .profile-page-container {{
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+    background: var(--bg-dark);
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.12) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, rgba(139, 92, 246, 0.1) 0px, transparent 50%),
+      radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.08) 0px, transparent 50%);
+    background-attachment: fixed;
+    color: var(--text-main);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }}
+
+  .profile-page-navbar {{
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(9, 13, 22, 0.92);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border-card);
+    padding: 1rem 2rem;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 1rem;
   }}
-  .profile-nav-btn {{
+
+  .profile-nav-left {{
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }}
+
+  .btn-back {{
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.45rem 1rem;
-    background: rgba(139, 92, 246, 0.12);
-    border: 1px solid rgba(139, 92, 246, 0.35);
-    color: #c4b5fd;
-    border-radius: 10px;
-    font-size: 0.85rem;
+    padding: 0.55rem 1.25rem;
+    background: rgba(59, 130, 246, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.4);
+    color: #60a5fa;
+    border-radius: 12px;
+    font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
     font-family: var(--font-body);
   }}
-  .profile-nav-btn:hover {{
-    background: rgba(139, 92, 246, 0.25);
-    border-color: rgba(139, 92, 246, 0.6);
-    color: #fff;
-    transform: translateY(-1px);
-  }}
-  .avatar-circle {{
-    font-size: 1.1rem;
+  .btn-back:hover {{
+    background: rgba(59, 130, 246, 0.3);
+    color: #ffffff;
+    transform: translateX(-3px);
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
   }}
 
-  dialog#profile-modal {{
-    margin: auto;
-    max-width: 720px;
-    width: 90vw;
-    max-height: 85vh;
-    background: rgba(15, 20, 35, 0.96);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(139, 92, 246, 0.3);
-    border-radius: 20px;
-    color: var(--text-main);
-    padding: 0;
-    overflow: hidden;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(139, 92, 246, 0.15);
-
-    opacity: 0;
-    transform: scale(0.95);
-    transition-property: opacity, transform, display, overlay;
-    transition-duration: 0.25s;
-    transition-timing-function: ease-out;
-    transition-behavior: allow-discrete;
-  }}
-
-  dialog#profile-modal[open] {{
-    opacity: 1;
-    transform: scale(1);
-
-    @starting-style {{
-      opacity: 0;
-      transform: scale(0.95);
-    }}
-  }}
-
-  dialog#profile-modal::backdrop {{
-    background-color: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(8px);
-    transition: display 0.25s allow-discrete, overlay 0.25s allow-discrete, background-color 0.25s ease-out;
-  }}
-  .profile-modal-inner {{
+  .profile-page-title-group {{
     display: flex;
     flex-direction: column;
-    max-height: 85vh;
   }}
-  .profile-modal-header {{
+  .profile-page-title {{
+    font-family: var(--font-heading);
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--text-main);
+  }}
+  .profile-page-subtitle {{
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }}
+  .profile-pill-badge {{
+    padding: 0.4rem 0.9rem;
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.35);
+    color: #c4b5fd;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }}
+
+  .profile-page-content {{
+    padding: 2rem;
+    display: grid;
+    grid-template-columns: 440px 1fr;
+    gap: 1.5rem;
+    flex: 1;
+    max-width: 1600px;
+    margin: 0 auto;
+    width: 100%;
+  }}
+
+  .profile-card {{
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border-card);
+    border-radius: 16px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.25rem;
+  }}
+  .profile-card-title {{
+    font-family: var(--font-heading);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #a78bfa;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }}
+
+  .profile-field-stacked {{
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-bottom: 0.75rem;
+  }}
+
+  .resume-card-container {{
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 0;
+  }}
+  .resume-card-header {{
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }}
-  .profile-modal-header h2 {{
-    font-family: var(--font-heading);
-    font-size: 1.25rem;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }}
-  .profile-tabs {{
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 0 1.5rem;
-    overflow-x: auto;
-  }}
-  .profile-tab {{
-    padding: 0.7rem 1.1rem;
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    transition: all 0.15s ease;
-    white-space: nowrap;
-    background: none;
-    border-top: none;
-    border-left: none;
-    border-right: none;
-    font-family: var(--font-body);
-  }}
-  .profile-tab:hover {{ color: #c4b5fd; }}
-  .profile-tab.active {{
-    color: #a78bfa;
-    border-bottom-color: #8b5cf6;
-  }}
-  .profile-tab-content {{
-    display: none;
-    padding: 1.5rem;
-    overflow-y: auto;
-    max-height: calc(85vh - 140px);
-  }}
-  .profile-tab-content.active {{ display: block; }}
 
-  .profile-section-title {{
-    font-family: var(--font-heading);
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: #a78bfa;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin: 1.25rem 0 0.6rem 0;
-  }}
-  .profile-section-title:first-child {{ margin-top: 0; }}
-
-  .profile-field {{
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.4rem 0;
-    font-size: 0.85rem;
-    line-height: 1.5;
-  }}
-  .profile-field-label {{
-    color: var(--text-muted);
-    min-width: 140px;
-    flex-shrink: 0;
-    font-weight: 500;
-  }}
-  .profile-field-value {{
-    color: var(--text-main);
-    word-break: break-word;
-  }}
-  .profile-field-value a {{
-    color: #60a5fa;
-    text-decoration: none;
-  }}
-  .profile-field-value a:hover {{ text-decoration: underline; }}
-
-  .skill-chips {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    margin-top: 0.25rem;
-  }}
-  .skill-chip {{
-    display: inline-block;
-    padding: 0.25rem 0.65rem;
-    background: rgba(59, 130, 246, 0.12);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    color: #93c5fd;
-    border-radius: 6px;
-    font-size: 0.78rem;
-    font-weight: 500;
-  }}
-  .skill-chip.framework {{
-    background: rgba(16, 185, 129, 0.12);
-    border-color: rgba(16, 185, 129, 0.3);
-    color: #6ee7b7;
-  }}
-  .skill-chip.tool {{
-    background: rgba(245, 158, 11, 0.12);
-    border-color: rgba(245, 158, 11, 0.3);
-    color: #fcd34d;
-  }}
-
-  .resume-viewer {{
-    background: rgba(0, 0, 0, 0.4);
+  .resume-viewer-full {{
+    background: rgba(0, 0, 0, 0.45);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
-    padding: 1.25rem;
-    font-family: 'Courier New', monospace;
-    font-size: 0.78rem;
-    line-height: 1.6;
-    color: #cbd5e1;
+    border-radius: 12px;
+    padding: 1.5rem;
+    font-family: 'Cascadia Code', 'Fira Code', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.7;
+    color: #e2e8f0;
     white-space: pre-wrap;
     word-break: break-word;
-    max-height: 50vh;
+    flex: 1;
     overflow-y: auto;
+    max-height: calc(100vh - 220px);
   }}
 
-  .password-field {{
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }}
-  .password-toggle {{
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: var(--text-muted);
-    padding: 0.2rem 0.5rem;
-    border-radius: 5px;
-    font-size: 0.75rem;
-    cursor: pointer;
-    transition: all 0.15s;
-  }}
-  .password-toggle:hover {{ background: rgba(255, 255, 255, 0.15); color: #fff; }}
-
-  .privacy-notice {{
-    background: rgba(16, 185, 129, 0.08);
-    border: 1px solid rgba(16, 185, 129, 0.2);
-    border-radius: 10px;
-    padding: 0.85rem 1rem;
-    font-size: 0.8rem;
-    color: #6ee7b7;
-    margin-top: 1rem;
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
+  @media (max-width: 1100px) {{
+    .profile-page-content {{
+      grid-template-columns: 1fr;
+    }}
   }}
 
   @media (max-width: 1024px) {{
@@ -1412,8 +1362,8 @@ def generate_dashboard(output_path: str | None = None) -> str:
   </div>
 
   <div class="nav-right">
-    <button class="profile-nav-btn" onclick="openProfileModal()" title="View Candidate Profile">
-      <span class="avatar-circle">👤</span> Profile
+    <button class="profile-nav-btn" onclick="showProfileView()" title="View Candidate Profile & Master Resume">
+      <span class="avatar-circle">👤</span> Candidate Profile
     </button>
     <div class="search-wrapper">
       <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -1735,21 +1685,28 @@ function applyFilters() {{
 }}
 
 applyFilters();
-// ── Profile Modal ──────────────────────────────────────────
-function openProfileModal() {{
-  const modal = document.getElementById('profile-modal');
-  if (modal) modal.showModal();
+// ── Full-Screen Profile View Handlers ───────────────────────
+function showProfileView() {{
+  document.getElementById('profile-page-view')?.classList.remove('hidden');
+  window.location.hash = 'profile';
 }}
-function closeProfileModal() {{
-  const modal = document.getElementById('profile-modal');
-  if (modal) modal.close();
+
+function showDashboardView() {{
+  document.getElementById('profile-page-view')?.classList.add('hidden');
+  if (window.location.hash === '#profile') {{
+    history.pushState("", document.title, window.location.pathname + window.location.search);
+  }}
 }}
-function switchProfileTab(tabName) {{
-  document.querySelectorAll('.profile-tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.profile-tab-content').forEach(c => c.classList.remove('active'));
-  document.querySelector(`.profile-tab[data-tab="${{tabName}}"]`)?.classList.add('active');
-  document.getElementById(`profile-tab-${{tabName}}`)?.classList.add('active');
+
+function copyResumeText() {{
+  const text = document.getElementById('master-resume-text-el')?.textContent || '';
+  navigator.clipboard.writeText(text).then(() => {{
+    showToast('Master resume copied to clipboard!');
+  }}).catch(() => {{
+    showToast('Failed to copy text');
+  }});
 }}
+
 function togglePasswordMask() {{
   const el = document.getElementById('profile-password-value');
   const btn = document.getElementById('profile-password-toggle');
@@ -1764,14 +1721,31 @@ function togglePasswordMask() {{
     btn.textContent = '👁 Show';
   }}
 }}
-// Close profile modal on backdrop click
-document.getElementById('profile-modal')?.addEventListener('click', (e) => {{
-  const r = e.target.getBoundingClientRect();
-  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) closeProfileModal();
+
+// Handle Hash Routing & Keybindings
+window.addEventListener('hashchange', () => {{
+  if (window.location.hash === '#profile') {{
+    document.getElementById('profile-page-view')?.classList.remove('hidden');
+  }} else {{
+    document.getElementById('profile-page-view')?.classList.add('hidden');
+  }}
+}});
+
+if (window.location.hash === '#profile') {{
+  document.getElementById('profile-page-view')?.classList.remove('hidden');
+}}
+
+document.addEventListener('keydown', (e) => {{
+  if (e.key === 'Escape') {{
+    const profileView = document.getElementById('profile-page-view');
+    if (profileView && !profileView.classList.contains('hidden')) {{
+      showDashboardView();
+    }}
+  }}
 }});
 </script>
 
-{_build_profile_modal_html(profile_data, resume_raw_text)}
+{_build_profile_page_html(profile_data, resume_raw_text)}
 
 </body>
 </html>"""
