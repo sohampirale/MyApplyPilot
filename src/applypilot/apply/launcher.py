@@ -366,6 +366,8 @@ def run_job(job: dict, port: int, worker_id: int = 0,
                          actions=cur_actions + 1,
                          last_action=action_desc[:35])
 
+        chrome_proc = launch_chrome(worker_id, port=port, headless=False)
+
         # Run the browser-use agent synchronously
         output, action_count = run_agent_sync(
             task_prompt=agent_prompt,
@@ -459,6 +461,12 @@ def run_job(job: dict, port: int, worker_id: int = 0,
         add_event(f"[W{worker_id}] ERROR: {str(e)[:40]}")
         update_state(worker_id, status="failed", last_action=f"ERROR: {str(e)[:25]}")
         return f"failed:{str(e)[:100]}", duration_ms
+    finally:
+        try:
+            if 'chrome_proc' in locals() and chrome_proc:
+                cleanup_worker(worker_id, chrome_proc)
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
