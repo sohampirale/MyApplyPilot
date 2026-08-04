@@ -470,9 +470,9 @@ def generate_dashboard(output_path: str | None = None,
             f'<span class="meta-tag site-tag" style="background:{site_color}18;color:{site_color};border:1px solid {site_color}44">{site}</span>'
         )
         if has_resume:
-            meta_parts.append('<span class="meta-tag resume-ready">📄 Resume Ready</span>')
+            meta_parts.append('<span class="meta-tag resume-ready">📄 AI Resume Ready</span>')
         else:
-            meta_parts.append('<span class="meta-tag resume-auto">⚡ Auto-Tailors on Apply</span>')
+            meta_parts.append('<span class="meta-tag resume-auto">⚡ Auto-Creates AI Resume</span>')
         if salary:
             meta_parts.append(f'<span class="meta-tag salary">💰 {salary}</span>')
         if location:
@@ -482,9 +482,9 @@ def generate_dashboard(output_path: str | None = None,
         apply_html = ""
         if apply_url:
             if has_resume:
-                apply_html = f'<a href="{apply_url}" class="btn-primary apply-link" target="_blank">Apply <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>'
+                apply_html = f'<a href="{apply_url}" class="btn-primary apply-link" target="_blank">🚀 AI-Auto Apply <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>'
             else:
-                apply_html = f'<button class="btn-primary tailor-apply-btn" onclick="tailorAndApply(this, \'{url}\', \'{apply_url}\')">⚡ Tailor & Apply</button>'
+                apply_html = f'<button class="btn-primary tailor-apply-btn" onclick="tailorAndApply(this, \'{url}\', \'{apply_url}\')">⚡ AI-Create Resume &amp; Apply</button>'
 
         card_id = f"job-card-{idx}"
 
@@ -1859,11 +1859,11 @@ document.getElementById('job-modal').addEventListener('click', (e) => {{
 
 async function tailorAndApply(btn, jobUrl, applyUrl) {{
   btn.disabled = true;
-  btn.textContent = '⏳ Tailoring Resume...';
+  btn.textContent = '⏳ AI Creating Resume...';
 
   const newTab = window.open('about:blank', '_blank');
   if (newTab) {{
-    newTab.document.write('<div style="font-family:Inter,sans-serif;background:#090d16;color:#f3f4f6;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;"><h2>⚡ ApplyPilot is tailoring your resume...</h2><p style="color:#9ca3af;">Redirecting to application page shortly!</p></div>');
+    newTab.document.write('<div style="font-family:Inter,sans-serif;background:#090d16;color:#f3f4f6;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;"><h2>⚡ ApplyPilot is creating your AI resume...</h2><p style="color:#9ca3af;">Redirecting to application page shortly!</p></div>');
   }}
 
   try {{
@@ -1884,15 +1884,15 @@ async function tailorAndApply(btn, jobUrl, applyUrl) {{
     const card = btn.closest('.job-card');
     const badge = card ? card.querySelector('.resume-auto') : null;
     if (badge) {{
-      badge.textContent = '📄 Resume Ready';
+      badge.textContent = '📄 AI Resume Ready';
       badge.className = 'meta-tag resume-ready';
     }}
 
-    btn.textContent = 'Apply ↗';
+    btn.textContent = '🚀 AI-Auto Apply ↗';
     btn.className = 'btn-primary apply-link';
     btn.disabled = false;
     btn.onclick = () => window.open(targetUrl, '_blank');
-    showToast('Resume tailored successfully!');
+    showToast('AI Resume created successfully!');
   }} catch (e) {{
     if (newTab && !newTab.closed) newTab.location.href = applyUrl;
     else window.location.href = applyUrl;
@@ -2232,9 +2232,9 @@ def generate_job_detail_page(job_url: str) -> str:
     if location:
         meta_pills += f'<span class="meta-tag location">📍 {location}</span> '
     if has_resume:
-        meta_pills += '<span class="meta-tag resume-ready">📄 Resume Ready</span>'
+        meta_pills += '<span class="meta-tag resume-ready">📄 AI Resume Ready</span>'
     else:
-        meta_pills += '<span class="meta-tag resume-auto">⚡ Auto-Tailors on Apply</span>'
+        meta_pills += '<span class="meta-tag resume-auto">⚡ Auto-Creates AI Resume</span>'
 
     # Nav buttons
     prev_html = f'<a href="/job?url={url_quote(prev_url, safe="")}" class="nav-btn">‹ Prev</a>' if prev_url else '<span class="nav-btn disabled">‹ Prev</span>'
@@ -2243,9 +2243,9 @@ def generate_job_detail_page(job_url: str) -> str:
     # Action buttons
     action_html = ""
     if has_resume:
-        action_html = f'<a href="{apply_url}" target="_blank" class="btn-primary">Apply Now ↗</a>'
+        action_html = f'<a href="{apply_url}" target="_blank" class="btn-primary">🚀 AI-Auto Apply ↗</a>'
     else:
-        action_html = f'<button class="btn-primary tailor-apply-btn" onclick="tailorAndApply(this, \'{url}\', \'{apply_url}\')">⚡ Tailor &amp; Apply</button>'
+        action_html = f'<button class="btn-primary tailor-apply-btn" onclick="tailorAndApply(this, \'{url}\', \'{apply_url}\')">⚡ AI-Create Resume &amp; Apply</button>'
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -2545,11 +2545,11 @@ function copyLink(url) {{
 
 async function tailorAndApply(btn, jobUrl, applyUrl) {{
   btn.disabled = true;
-  btn.textContent = '⏳ Tailoring...';
+  btn.textContent = '⏳ AI Creating Resume...';
   
   const newTab = window.open('about:blank', '_blank');
   if (newTab) {{
-    newTab.document.write('<div style="font-family:Inter,sans-serif;background:#090d16;color:#f3f4f6;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;"><h2>⚡ ApplyPilot is tailoring your resume...</h2><p style="color:#9ca3af;">Redirecting to application page shortly!</p></div>');
+    newTab.document.write('<div style="font-family:Inter,sans-serif;background:#090d16;color:#f3f4f6;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;"><h2>⚡ ApplyPilot is creating your AI resume...</h2><p style="color:#9ca3af;">Redirecting to application page shortly!</p></div>');
   }}
   
   try {{
@@ -2567,11 +2567,11 @@ async function tailorAndApply(btn, jobUrl, applyUrl) {{
       window.location.href = targetUrl;
     }}
     
-    btn.textContent = 'Apply ↗';
+    btn.textContent = '🚀 AI-Auto Apply ↗';
     btn.className = 'btn-primary apply-link';
     btn.disabled = false;
     btn.onclick = () => window.open(targetUrl, '_blank');
-    showToast('Resume tailored successfully!');
+    showToast('AI Resume created successfully!');
   }} catch (e) {{
     if (newTab && !newTab.closed) newTab.location.href = applyUrl;
     else window.location.href = applyUrl;
