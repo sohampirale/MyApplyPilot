@@ -92,12 +92,54 @@ Recognizes and automatically fills fields specific to Indian job forms:
 
 ---
 
+---
+
+## 🎓 Multi-Student Architecture & Domain Isolation
+
+ApplyPilot supports multi-tenant candidate isolation, allowing multiple students from different colleges and majors (Engineering, Pharmacy, Architecture, MBA) to use the platform independently.
+
+```mermaid
+graph TD
+    DB[("Shared Jobs Database")]
+    
+    DB -->|domain = 'engineering'| EngPool["Software & AI Job Pool"]
+    DB -->|domain = 'pharmacy'| PharmPool["Pharmacy & Lifesciences Job Pool"]
+    DB -->|domain = 'architecture'| ArchPool["Architecture & Design Job Pool"]
+    DB -->|domain = 'mba'| MbaPool["MBA & Management Job Pool"]
+    
+    EngPool --> Student1["Student 1 (Engineering)<br>• Sees 14k Software Jobs<br>• Isolated Scores & Resumes"]
+    EngPool --> Student2["Student 2 (Engineering)<br>• Sees Shared Software Jobs<br>• Isolated Scores & Resumes"]
+    
+    PharmPool --> Student3["Student 3 (Pharmacy)<br>• Sees Pharmacy Pool (0 Software Jobs)<br>• Isolated Scores & Resumes"]
+    ArchPool --> Student4["Student 4 (Architecture)<br>• Sees Architecture Pool (0 Software Jobs)<br>• Isolated Scores & Resumes"]
+```
+
+### 1. Per-Candidate Data Isolation (`~/.applypilot/candidates/<id>/`)
+- **Directory Isolation**: Each candidate profile lives in `~/.applypilot/candidates/<candidate_id>/` containing their `profile.json`, `resume.txt`, `resume.pdf`, `searches.yaml`, `tailored_resumes/`, and `cover_letters/`.
+- **Candidate Scores Table (`candidate_scores`)**: Fit scores, AI reasoning, tailored resume paths, cover letters, and application statuses are stored per-candidate in SQL table `candidate_scores(candidate_id, job_url, fit_score, ...)`.
+
+### 2. Domain Engines (`src/applypilot/domains/`)
+- **`EngineeringEngine`** (💻): Software, AI, Backend, DevOps, Data Science.
+- **`PharmacyEngine`** (💊): Quality Assurance (QA), Quality Control (QC), Regulatory Affairs, Clinical Research, Pharmacist.
+- **`ArchitectureEngine`** (🏛️): Junior Architect, BIM Modeler, CAD Specialist, Urban Planner, Interior Design.
+- **`MBAEngine`** (📊): Business Analyst, Management Trainee, Product Manager, Strategy Analyst, Operations.
+
+### 3. Domain Job Pool Isolation (`domain` Column in `jobs` Table)
+- Discovered jobs are tagged with a `domain` column.
+- Students in non-engineering disciplines (e.g. Pharmacy, Architecture) do not see software engineering jobs in their job pools or dashboard.
+- Students in the same domain share the discovered job pool for efficiency while maintaining 100% separate candidate fit scores, resumes, and application statuses.
+
+---
+
 ## 🛠 Usage & CLI Commands
 
 ```bash
 applypilot init         # Interactive setup (defaults to India & Indian Tech Hubs)
 applypilot doctor       # Diagnostics check
+applypilot candidates   # List all registered student profiles & active status
+applypilot switch <id>  # Switch active candidate profile
 applypilot run          # Runs discovery -> enrich -> score -> tailor -> cover -> pdf
 applypilot apply        # Autonomous browser application submission
-applypilot dashboard    # Opens HTML results dashboard
+applypilot dashboard    # Opens interactive HTML results dashboard with candidate switcher
 ```
+

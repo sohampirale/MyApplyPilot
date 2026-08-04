@@ -176,11 +176,24 @@ applypilot apply --dry-run              # Fill forms without submitting
 applypilot apply --continuous           # Run forever, polling for new jobs
 applypilot apply --headless             # Headless browser mode
 applypilot apply --url URL              # Apply to a specific job
+applypilot candidates                   # List all student profiles & active status
+applypilot switch <candidate_id>        # Switch active student profile
 applypilot status                       # Pipeline statistics
-applypilot dashboard                    # Open HTML results dashboard
+applypilot dashboard                    # Open HTML results dashboard with candidate switcher
 ```
 
 ---
+
+## 🎓 Multi-Student & Domain Engines
+
+ApplyPilot features multi-tenant student isolation with dedicated domain engines:
+- **💻 Engineering Engine**: Software, AI, Backend, DevOps, Data Science.
+- **💊 Pharmacy Engine**: QA, QC, Regulatory Affairs, Clinical Research, Pharmacists.
+- **🏛️ Architecture Engine**: Junior Architect, BIM Modeler, CAD Specialist, Urban Planning.
+- **📊 MBA Engine**: Business Analyst, Management Trainee, Product Manager, Strategy Analyst.
+
+Each student gets an isolated folder in `~/.applypilot/candidates/<id>/` with 100% separate candidate fit scores, tailored resumes, cover letters, and application tracking.
+
 
 ## Contributing
 
