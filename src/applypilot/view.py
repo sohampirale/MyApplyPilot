@@ -2281,11 +2281,11 @@ def generate_job_detail_page(job_url: str) -> str:
     action_html = ""
     if has_resume:
         action_html = f'''
-        <button class="btn-secondary" disabled style="opacity:0.75;">✓ AI Resume Created</button>
+        <button class="btn-secondary" id="toggle-ai-resume-btn" onclick="toggleAIResumeView(\'{url}\')" style="background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3);color:#34d399;">📄 Show AI Generated Resume</button>
         <a href="{apply_url}" target="_blank" class="btn-primary">🚀 AI-Auto Apply ↗</a>'''
     else:
         action_html = f'''
-        <button class="btn-secondary" onclick="tailorResumeOnly(this, \'{url}\')" style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.35);color:#60a5fa;">⚡ AI-Create Resume</button>
+        <button class="btn-secondary tailor-btn" id="toggle-ai-resume-btn" onclick="tailorResumeOnly(this, \'{url}\')" style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.35);color:#60a5fa;">⚡ AI-Create Resume</button>
         <a href="{apply_url}" target="_blank" class="btn-primary">🚀 AI-Auto Apply ↗</a>'''
 
     html = f"""<!DOCTYPE html>
@@ -2516,6 +2516,22 @@ def generate_job_detail_page(job_url: str) -> str:
       {action_html}
       <button class="btn-secondary" onclick="copyLink('{apply_url}')">📋 Copy Application Link</button>
     </div>
+
+    <!-- Inline AI Resume Viewer Container -->
+    <div id="ai-resume-view-card" class="hidden" style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid var(--border-card);animation:fadeIn 0.3s ease-out;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+        <h3 style="font-family:var(--font-heading);font-size:1.1rem;font-weight:700;color:#fff;display:flex;align-items:center;gap:0.5rem;">
+          <span style="font-size:1.2rem;">✨</span> AI-Generated Tailored Resume
+        </h3>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+          <button class="btn-secondary" onclick="copyAIResumeText()" style="font-size:0.8rem;padding:0.35rem 0.75rem;">📋 Copy Resume Text</button>
+          <button class="btn-secondary" onclick="hideAIResumeView('{url}')" style="font-size:0.8rem;padding:0.35rem 0.75rem;background:rgba(239,68,68,0.15);color:#fca5a5;border:1px solid rgba(239,68,68,0.3);">🙈 Hide Resume</button>
+        </div>
+      </div>
+      <div id="ai-resume-display-box" style="background:rgba(15,23,42,0.9);border:1px solid rgba(96,165,250,0.25);border-radius:12px;padding:1rem;min-height:150px;color:#cbd5e1;font-size:0.9rem;">
+        Loading AI-generated resume...
+      </div>
+    </div>
   </div>
 
   <div class="two-col">
@@ -2582,6 +2598,63 @@ function copyLink(url) {{
   }}).catch(() => {{
     showToast('Failed to copy link');
   }});
+let currentAIResumeText = '';
+
+async function toggleAIResumeView(jobUrl) {{
+  const container = document.getElementById('ai-resume-view-card');
+  const btn = document.getElementById('toggle-ai-resume-btn');
+  const displayBox = document.getElementById('ai-resume-display-box');
+
+  if (!container) return;
+
+  if (!container.classList.contains('hidden')) {{
+    container.classList.add('hidden');
+    if (btn) btn.innerHTML = '📄 Show AI Generated Resume';
+    return;
+  }}
+
+  container.classList.remove('hidden');
+  if (btn) btn.innerHTML = '🙈 Hide AI Generated Resume';
+  displayBox.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;padding:2rem;color:#9ca3af;">⏳ Loading AI Generated Resume...</div>';
+
+  try {{
+    const res = await fetch('/api/job_resume?url=' + encodeURIComponent(jobUrl));
+    const data = await res.json();
+    if (data.status === 'ok' && data.has_resume) {{
+      if (data.type === 'pdf' && data.pdf_b64) {{
+        displayBox.innerHTML = `<iframe src="data:application/pdf;base64,${{data.pdf_b64}}" style="width:100%;height:650px;border:none;border-radius:10px;"></iframe>`;
+      }} else if (data.text) {{
+        currentAIResumeText = data.text;
+        displayBox.innerHTML = `<pre id="ai-resume-raw-text" style="white-space:pre-wrap;font-family:monospace;background:rgba(0,0,0,0.4);padding:1.25rem;border-radius:10px;max-height:600px;overflow-y:auto;line-height:1.6;color:#e2e8f0;border:1px solid rgba(255,255,255,0.08);">${{data.text}}</pre>`;
+      }}
+    }} else {{
+      displayBox.innerHTML = '<div style="padding:1.5rem;color:#fca5a5;text-align:center;">No AI-generated resume file found for this job. Click "AI-Create Resume" to generate one.</div>';
+    }}
+  }} catch (e) {{
+    displayBox.innerHTML = '<div style="padding:1.5rem;color:#fca5a5;text-align:center;">Error loading resume.</div>';
+  }}
+}}
+
+function hideAIResumeView(jobUrl) {{
+  const container = document.getElementById('ai-resume-view-card');
+  const btn = document.getElementById('toggle-ai-resume-btn');
+  if (container) container.classList.add('hidden');
+  if (btn) btn.innerHTML = '📄 Show AI Generated Resume';
+}}
+
+function copyAIResumeText() {{
+  const text = currentAIResumeText || document.getElementById('ai-resume-raw-text')?.textContent || '';
+  if (!text) {{
+    showToast('No text available to copy');
+    return;
+  }}
+  navigator.clipboard.writeText(text).then(() => {{
+    showToast('AI-generated resume copied to clipboard!');
+  }}).catch(() => {{
+    showToast('Failed to copy text');
+  }});
+}}
+
 async function tailorResumeOnly(btn, jobUrl) {{
   btn.disabled = true;
   btn.innerHTML = '⏳ AI Creating Resume...';
@@ -2599,9 +2672,15 @@ async function tailorResumeOnly(btn, jobUrl) {{
         badge.textContent = '📄 AI Resume Ready';
         badge.className = 'meta-tag resume-ready';
       }}
-      btn.innerHTML = '✓ AI Resume Created';
-      btn.style.opacity = '0.75';
+      btn.disabled = false;
+      btn.id = 'toggle-ai-resume-btn';
+      btn.className = 'btn-secondary';
+      btn.style.background = 'rgba(16,185,129,0.12)';
+      btn.style.border = '1px solid rgba(16,185,129,0.3)';
+      btn.style.color = '#34d399';
+      btn.onclick = () => toggleAIResumeView(jobUrl);
       showToast('AI Resume created successfully!');
+      toggleAIResumeView(jobUrl);
     }} else {{
       btn.disabled = false;
       btn.innerHTML = '⚡ AI-Create Resume';

@@ -70,6 +70,42 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "active": get_active_candidate_id(),
                 "candidates": candidates,
             })
+        elif parsed.path == "/api/job_resume":
+            params = parse_qs(parsed.query)
+            job_url = params.get("url", [None])[0]
+            if not job_url:
+                self._send_json({"status": "error", "error": "Missing 'url' parameter"}, status=400)
+                return
+            conn = get_connection()
+            job = conn.execute("SELECT tailored_resume_path FROM jobs WHERE url = ?", (job_url,)).fetchone()
+            if not job or not job["tailored_resume_path"]:
+                self._send_json({"status": "ok", "has_resume": False})
+                return
+
+            rpath = Path(job["tailored_resume_path"])
+            if not rpath.exists():
+                self._send_json({"status": "ok", "has_resume": False, "error": "Resume file not found on disk"})
+                return
+
+            if rpath.suffix.lower() == ".pdf":
+                import base64
+                pdf_b64 = base64.b64encode(rpath.read_bytes()).decode("utf-8")
+                self._send_json({
+                    "status": "ok",
+                    "has_resume": True,
+                    "type": "pdf",
+                    "pdf_b64": pdf_b64,
+                    "path": str(rpath)
+                })
+            else:
+                text_content = rpath.read_text(encoding="utf-8", errors="replace")
+                self._send_json({
+                    "status": "ok",
+                    "has_resume": True,
+                    "type": "txt",
+                    "text": text_content,
+                    "path": str(rpath)
+                })
         else:
             self.send_error(404, "Not Found")
 
