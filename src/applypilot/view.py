@@ -1727,8 +1727,12 @@ def generate_dashboard(output_path: str | None = None,
     </div>
   </div>
 
-  <!-- Analytics Row -->
-  <div class="analytics-section">
+  <div id="job-count" class="job-count-status"></div>
+
+  {job_sections}
+
+  <!-- Analytics Section (Score Distribution & Source Distribution) placed below job list -->
+  <div class="analytics-section" style="margin-top: 3rem;">
     <div class="analytics-card">
       <h3><span>📊</span> Score Distribution</h3>
       {score_bars}
@@ -1738,10 +1742,6 @@ def generate_dashboard(output_path: str | None = None,
       {site_rows}
     </div>
   </div>
-
-  <div id="job-count" class="job-count-status"></div>
-
-  {job_sections}
 
 </div>
 
