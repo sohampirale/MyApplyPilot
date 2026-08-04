@@ -193,42 +193,74 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._send_json({"status": "error", "error": "Missing job url"}, status=400)
                 return
 
-            # Perform on-the-fly tailoring
+            cid = get_active_candidate_id()
             conn = get_connection()
             job = conn.execute("SELECT * FROM jobs WHERE url = ?", (job_url,)).fetchone()
             if not job:
-                self._send_json({"status": "error", "error": "Job not found in database"}, status=44)
+                self._send_json({"status": "error", "error": "Job not found in database"}, status=404)
                 return
 
             job_dict = dict(job)
-            resume_path = job_dict.get("tailored_resume_path")
+            cs_row = conn.execute(
+                "SELECT tailored_resume_path FROM candidate_scores WHERE candidate_id = ? AND job_url = ?",
+                (cid, job_url)
+            ).fetchone()
+            resume_path = cs_row["tailored_resume_path"] if cs_row and cs_row["tailored_resume_path"] else job_dict.get("tailored_resume_path")
 
-            if not resume_path and job_dict.get("full_description"):
-                try:
-                    import re
-                    from applypilot.scoring.tailor import tailor_resume, load_profile, RESUME_PATH, TAILORED_DIR
-                    from applypilot.scoring.pdf import convert_to_pdf
-                    profile = load_profile()
-                    resume_text = RESUME_PATH.read_text(encoding="utf-8")
-                    TAILORED_DIR.mkdir(parents=True, exist_ok=True)
-                    tailored, report = tailor_resume(resume_text, job_dict, profile)
-                    status = (report.get("status") or "").lower()
-                    if tailored and status in ("approved", "approved_with_judge_warning"):
-                        safe_title = re.sub(r"[^\w\s-]", "", job_dict.get("title") or "job")[:50].strip().replace(" ", "_")
-                        safe_site = re.sub(r"[^\w\s-]", "", job_dict.get("site") or "site")[:20].strip().replace(" ", "_")
-                        prefix = f"{safe_site}_{safe_title}"
-                        txt_path = TAILORED_DIR / f"{prefix}.txt"
-                        txt_path.write_text(tailored, encoding="utf-8")
-                        try:
-                            resume_path = str(convert_to_pdf(txt_path))
-                        except Exception:
-                            resume_path = str(txt_path)
-                        conn.execute("UPDATE jobs SET tailored_resume_path = ? WHERE url = ?", (resume_path, job_url))
-                        conn.commit()
-                except Exception as e:
-                    log.error("On-the-fly tailoring error: %s", e)
-                    self._send_json({"status": "error", "error": str(e)}, status=500)
-                    return
+            if not resume_path:
+                desc = job_dict.get("full_description") or job_dict.get("description")
+                if desc:
+                    try:
+                        import re
+                        from datetime import datetime, timezone
+                        from applypilot.scoring.tailor import tailor_resume
+                        from applypilot.config import (
+                            load_candidate_profile, get_candidate_resume_path,
+                            get_candidate_tailored_dir, RESUME_PATH
+                        )
+
+                        profile = load_candidate_profile(cid)
+                        cand_resume_p = get_candidate_resume_path(cid)
+                        if cand_resume_p.exists():
+                            resume_text = cand_resume_p.read_text(encoding="utf-8")
+                        elif RESUME_PATH.exists():
+                            resume_text = RESUME_PATH.read_text(encoding="utf-8")
+                        else:
+                            resume_text = f"Candidate Profile: {json.dumps(profile)}"
+
+                        cand_tailored_dir = get_candidate_tailored_dir(cid)
+                        cand_tailored_dir.mkdir(parents=True, exist_ok=True)
+
+                        tailored, report = tailor_resume(resume_text, job_dict, profile)
+                        if tailored:
+                            safe_title = re.sub(r"[^\w\s-]", "", job_dict.get("title") or "job")[:50].strip().replace(" ", "_")
+                            safe_site = re.sub(r"[^\w\s-]", "", job_dict.get("site") or "site")[:20].strip().replace(" ", "_")
+                            prefix = f"{safe_site}_{safe_title}"
+                            txt_path = cand_tailored_dir / f"{prefix}.txt"
+                            txt_path.write_text(tailored, encoding="utf-8")
+                            try:
+                                from applypilot.scoring.pdf import convert_to_pdf
+                                resume_path = str(convert_to_pdf(txt_path))
+                            except Exception:
+                                resume_path = str(txt_path)
+
+                            now = datetime.now(timezone.utc).isoformat()
+                            # Update candidate_scores table
+                            conn.execute("""
+                                INSERT INTO candidate_scores (candidate_id, job_url, fit_score, scored_at, tailored_resume_path, tailored_at)
+                                VALUES (?, ?, 7, ?, ?, ?)
+                                ON CONFLICT(candidate_id, job_url) DO UPDATE SET
+                                    tailored_resume_path = excluded.tailored_resume_path,
+                                    tailored_at = excluded.tailored_at
+                            """, (cid, job_url, now, resume_path, now))
+                            
+                            # Update jobs table for backwards compat
+                            conn.execute("UPDATE jobs SET tailored_resume_path = ? WHERE url = ?", (resume_path, job_url))
+                            conn.commit()
+                    except Exception as e:
+                        log.error("On-the-fly tailoring error: %s", e, exc_info=True)
+                        self._send_json({"status": "error", "error": str(e)}, status=500)
+                        return
 
             apply_url = job_dict.get("application_url") or job_url
             self._send_json({
