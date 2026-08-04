@@ -482,9 +482,15 @@ def generate_dashboard(output_path: str | None = None,
         apply_html = ""
         if apply_url:
             if has_resume:
-                apply_html = f'<a href="{apply_url}" class="btn-primary apply-link" target="_blank">🚀 AI-Auto Apply <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>'
+                apply_html = f'''<div class="action-btn-group" style="display:flex;align-items:center;gap:0.5rem;">
+                  <button class="btn-secondary btn-done" disabled style="opacity:0.75;font-size:0.8rem;padding:0.4rem 0.75rem;">✓ AI Resume Created</button>
+                  <a href="{apply_url}" class="btn-primary apply-link" target="_blank">🚀 AI-Auto Apply <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>
+                </div>'''
             else:
-                apply_html = f'<button class="btn-primary tailor-apply-btn" onclick="tailorAndApply(this, \'{url}\', \'{apply_url}\')">⚡ AI-Create Resume &amp; Apply</button>'
+                apply_html = f'''<div class="action-btn-group" style="display:flex;align-items:center;gap:0.5rem;">
+                  <button class="btn-secondary tailor-btn" onclick="tailorResumeOnly(this, \'{url}\')" style="font-size:0.8rem;padding:0.4rem 0.75rem;background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.35);color:#60a5fa;">⚡ AI-Create Resume</button>
+                  <a href="{apply_url}" class="btn-primary apply-link" target="_blank">🚀 AI-Auto Apply <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>
+                </div>'''
 
         card_id = f"job-card-{idx}"
 
@@ -1855,7 +1861,38 @@ document.getElementById('job-modal').addEventListener('click', (e) => {{
   ) {{
     closeJobModal();
   }}
-}});
+async function tailorResumeOnly(btn, jobUrl) {{
+  btn.disabled = true;
+  btn.innerHTML = '⏳ AI Creating Resume...';
+
+  try {{
+    const res = await fetch('/api/tailor', {{
+      method: 'POST',
+      headers: {{ 'Content-Type': 'application/json' }},
+      body: JSON.stringify({{ url: jobUrl }})
+    }});
+    const data = await res.json();
+    if (data.status === 'ok') {{
+      const card = btn.closest('.job-card') || document;
+      const badge = card ? card.querySelector('.resume-auto') : null;
+      if (badge) {{
+        badge.textContent = '📄 AI Resume Ready';
+        badge.className = 'meta-tag resume-ready';
+      }}
+      btn.innerHTML = '✓ AI Resume Created';
+      btn.style.opacity = '0.75';
+      showToast('AI Resume created successfully!');
+    }} else {{
+      btn.disabled = false;
+      btn.innerHTML = '⚡ AI-Create Resume';
+      showToast('Error: ' + (data.error || 'Failed to create resume'));
+    }}
+  }} catch (e) {{
+    btn.disabled = false;
+    btn.innerHTML = '⚡ AI-Create Resume';
+    showToast('Network error creating resume');
+  }}
+}}
 
 async function tailorAndApply(btn, jobUrl, applyUrl) {{
   btn.disabled = true;
@@ -2243,9 +2280,13 @@ def generate_job_detail_page(job_url: str) -> str:
     # Action buttons
     action_html = ""
     if has_resume:
-        action_html = f'<a href="{apply_url}" target="_blank" class="btn-primary">🚀 AI-Auto Apply ↗</a>'
+        action_html = f'''
+        <button class="btn-secondary" disabled style="opacity:0.75;">✓ AI Resume Created</button>
+        <a href="{apply_url}" target="_blank" class="btn-primary">🚀 AI-Auto Apply ↗</a>'''
     else:
-        action_html = f'<button class="btn-primary tailor-apply-btn" onclick="tailorAndApply(this, \'{url}\', \'{apply_url}\')">⚡ AI-Create Resume &amp; Apply</button>'
+        action_html = f'''
+        <button class="btn-secondary" onclick="tailorResumeOnly(this, \'{url}\')" style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.35);color:#60a5fa;">⚡ AI-Create Resume</button>
+        <a href="{apply_url}" target="_blank" class="btn-primary">🚀 AI-Auto Apply ↗</a>'''
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -2541,6 +2582,36 @@ function copyLink(url) {{
   }}).catch(() => {{
     showToast('Failed to copy link');
   }});
+async function tailorResumeOnly(btn, jobUrl) {{
+  btn.disabled = true;
+  btn.innerHTML = '⏳ AI Creating Resume...';
+  
+  try {{
+    const res = await fetch('/api/tailor', {{
+      method: 'POST',
+      headers: {{ 'Content-Type': 'application/json' }},
+      body: JSON.stringify({{ url: jobUrl }})
+    }});
+    const data = await res.json();
+    if (data.status === 'ok') {{
+      const badge = document.querySelector('.resume-auto');
+      if (badge) {{
+        badge.textContent = '📄 AI Resume Ready';
+        badge.className = 'meta-tag resume-ready';
+      }}
+      btn.innerHTML = '✓ AI Resume Created';
+      btn.style.opacity = '0.75';
+      showToast('AI Resume created successfully!');
+    }} else {{
+      btn.disabled = false;
+      btn.innerHTML = '⚡ AI-Create Resume';
+      showToast('Error: ' + (data.error || 'Failed to create resume'));
+    }}
+  }} catch (e) {{
+    btn.disabled = false;
+    btn.innerHTML = '⚡ AI-Create Resume';
+    showToast('Network error creating resume');
+  }}
 }}
 
 async function tailorAndApply(btn, jobUrl, applyUrl) {{
