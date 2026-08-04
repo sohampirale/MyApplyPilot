@@ -54,8 +54,11 @@ from applypilot.apply.agent import run_agent_sync, cancel_agent, cancel_all_agen
 
 # Register cleanup on exit
 atexit.register(cleanup_on_exit)
-if platform.system() != "Windows":
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+if platform.system() != "Windows" and threading.current_thread() is threading.main_thread():
+    try:
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    except (ValueError, TypeError):
+        pass
 
 
 # ---------------------------------------------------------------------------
