@@ -2298,11 +2298,13 @@ def generate_job_detail_page(job_url: str) -> str:
     if has_resume:
         action_html = f'''
         <button class="btn-secondary" id="toggle-ai-resume-btn" onclick="toggleAIResumeView(\'{url}\')" style="background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3);color:#34d399;">📄 Show AI Generated Resume</button>
-        <a href="{apply_url}" target="_blank" class="btn-primary">Apply ↗</a>'''
+        <button class="btn-primary" onclick="runAIAutoApply(this, \'{url}\')" style="background:linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);">🚀 Run AI Auto-Apply</button>
+        <a href="{apply_url}" target="_blank" class="btn-secondary" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#e2e8f0;">Apply ↗</a>'''
     else:
         action_html = f'''
         <button class="btn-secondary tailor-btn" id="toggle-ai-resume-btn" onclick="tailorResumeOnly(this, \'{url}\')" style="background:rgba(59,130,246,0.15);border:1px solid rgba(59,130,246,0.35);color:#60a5fa;">⚡ AI-Create Resume</button>
-        <a href="{apply_url}" target="_blank" class="btn-primary">Apply ↗</a>'''
+        <button class="btn-primary" onclick="runAIAutoApply(this, \'{url}\')" style="background:linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);">🚀 Run AI Auto-Apply</button>
+        <a href="{apply_url}" target="_blank" class="btn-secondary" style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#e2e8f0;">Apply ↗</a>'''
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -2740,6 +2742,70 @@ function hideApplicationTrace() {{
   if (container) {{
     container.style.display = 'none';
     container.classList.add('hidden');
+  }}
+}}
+
+async function runAIAutoApply(btn, jobUrl) {{
+  btn.disabled = true;
+  btn.innerHTML = '⏳ AI Auto-Applying...';
+
+  const container = document.getElementById('ai-trace-view-card');
+  const displayBox = document.getElementById('ai-trace-display-box');
+  if (container) {{
+    container.style.display = 'block';
+    container.classList.remove('hidden');
+  }}
+  if (displayBox) {{
+    displayBox.innerHTML = '<div style="color:#60a5fa;">🚀 AI Auto-Apply launched in background! Live browser worker connecting to CDP port 9222...</div>';
+  }}
+
+  try {{
+    const res = await fetch('/api/apply', {{
+      method: 'POST',
+      headers: {{ 'Content-Type': 'application/json' }},
+      body: JSON.stringify({{ url: jobUrl }})
+    }});
+    const data = await res.json();
+    if (data.status === 'ok') {{
+      showToast('🚀 AI Auto-Apply agent started! Tracking live trace...');
+      let polls = 0;
+      const interval = setInterval(async () => {{
+        polls++;
+        try {{
+          const tres = await fetch('/api/trace?url=' + encodeURIComponent(jobUrl));
+          const tdata = await tres.json();
+          if (tdata.status === 'ok' && tdata.has_trace) {{
+            const trace = tdata.trace;
+            let html = `<div style="margin-bottom:0.5rem;color:#34d399;"><strong>Status:</strong> ${{(trace.status || 'running').toUpperCase()}} | <strong>Actions:</strong> ${{trace.action_count || 0}}</div>`;
+            if (trace.actions && trace.actions.length > 0) {{
+              html += '<div style="margin-bottom:0.5rem;"><strong>Live Actions Taken:</strong></div><ol style="margin-top:0.25rem;padding-left:1.25rem;line-height:1.6;">';
+              trace.actions.forEach(a => {{ html += `<li>${{a}}</li>`; }});
+              html += '</ol>';
+            }}
+            if (displayBox) displayBox.innerHTML = html;
+
+            if (trace.status === 'applied' || trace.status === 'failed' || trace.status === 'completed' || polls > 30) {{
+              clearInterval(interval);
+              btn.disabled = false;
+              if (trace.status === 'applied') {{
+                btn.innerHTML = '✓ AI Auto-Applied';
+                btn.style.background = 'rgba(16,185,129,0.2)';
+              }} else {{
+                btn.innerHTML = '🚀 Run AI Auto-Apply';
+              }}
+            }}
+          }}
+        }} catch (e) {{}}
+      }}, 2500);
+    }} else {{
+      showToast('Failed to start AI Auto-Apply: ' + (data.error || 'unknown error'));
+      btn.disabled = false;
+      btn.innerHTML = '🚀 Run AI Auto-Apply';
+    }}
+  }} catch (e) {{
+    showToast('Network error launching AI Auto-Apply');
+    btn.disabled = false;
+    btn.innerHTML = '🚀 Run AI Auto-Apply';
   }}
 }}
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -299,6 +300,40 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "apply_url": apply_url,
                 "title": job_dict.get("title")
             })
+
+        elif parsed.path == "/api/apply":
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                self._send_json({"status": "error", "error": "Invalid JSON"}, status=400)
+                return
+
+            job_url = data.get("url")
+            if not job_url:
+                self._send_json({"status": "error", "error": "Missing job url"}, status=400)
+                return
+
+            cid = get_active_candidate_id()
+            conn = get_connection()
+            job = conn.execute("SELECT * FROM jobs WHERE url = ?", (job_url,)).fetchone()
+            if not job:
+                self._send_json({"status": "error", "error": "Job not found in database"}, status=404)
+                return
+
+            job_dict = dict(job)
+
+            def _background_apply():
+                try:
+                    from applypilot.apply.launcher import run_job
+                    run_job(job_dict, port=9222, worker_id=0)
+                    generate_dashboard()
+                except Exception as e:
+                    log.exception("Error in background auto-apply: %s", e)
+
+            t = threading.Thread(target=_background_apply, daemon=True)
+            t.start()
+
+            self._send_json({"status": "ok", "message": "AI Auto-Apply launched in background", "url": job_url})
         else:
             self.send_error(404, "Not Found")
 
