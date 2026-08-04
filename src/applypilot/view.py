@@ -1188,22 +1188,42 @@ def generate_dashboard(output_path: str | None = None) -> str:
   }}
 
   dialog#profile-modal {{
-    position: fixed;
-    max-width: 700px;
+    margin: auto;
+    max-width: 720px;
     width: 90vw;
     max-height: 85vh;
-    background: rgba(15, 20, 35, 0.95);
+    background: rgba(15, 20, 35, 0.96);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(139, 92, 246, 0.25);
+    border: 1px solid rgba(139, 92, 246, 0.3);
     border-radius: 20px;
     color: var(--text-main);
     padding: 0;
     overflow: hidden;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(139, 92, 246, 0.15);
+
+    opacity: 0;
+    transform: scale(0.95);
+    transition-property: opacity, transform, display, overlay;
+    transition-duration: 0.25s;
+    transition-timing-function: ease-out;
+    transition-behavior: allow-discrete;
   }}
+
+  dialog#profile-modal[open] {{
+    opacity: 1;
+    transform: scale(1);
+
+    @starting-style {{
+      opacity: 0;
+      transform: scale(0.95);
+    }}
+  }}
+
   dialog#profile-modal::backdrop {{
     background-color: rgba(0, 0, 0, 0.75);
     backdrop-filter: blur(8px);
+    transition: display 0.25s allow-discrete, overlay 0.25s allow-discrete, background-color 0.25s ease-out;
   }}
   .profile-modal-inner {{
     display: flex;
