@@ -19,7 +19,7 @@ from urllib.parse import quote as url_quote
 
 from rich.console import Console
 
-from applypilot.config import APP_DIR, DB_PATH, PROFILE_PATH, RESUME_PATH
+from applypilot.config import APP_DIR, DB_PATH, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH
 from applypilot.database import get_connection
 
 console = Console()
@@ -40,8 +40,8 @@ def _clean_resume_spacing(text: str) -> str:
     return "\n".join(cleaned)
 
 
-def _build_profile_page_html(profile: dict, resume_text: str) -> str:
-    """Build full-screen Candidate Profile Page view."""
+def _build_profile_page_html(profile: dict, resume_text: str, resume_pdf_b64: str = "") -> str:
+    """Build full-screen Candidate Profile Page view with embedded PDF resume viewer."""
     personal = profile.get("personal", {})
     work_auth = profile.get("work_authorization", {})
     comp = profile.get("compensation", {})
@@ -88,8 +88,25 @@ def _build_profile_page_html(profile: dict, resume_text: str) -> str:
     fw_chips = "".join(f'<span class="skill-chip framework">{escape(str(s))}</span>' for s in frameworks)
     tool_chips = "".join(f'<span class="skill-chip tool">{escape(str(s))}</span>' for s in tools)
 
-    cleaned_resume = _clean_resume_spacing(resume_text) if resume_text else "No master resume found at ~/.applypilot/resume.txt"
+    cleaned_resume = _clean_resume_spacing(resume_text) if resume_text else "No master resume text found at ~/.applypilot/resume.txt"
     resume_display = escape(cleaned_resume)
+
+    has_pdf = bool(resume_pdf_b64)
+
+    pdf_viewer_markup = f"""
+    <div id="pdf-resume-frame-container" style="flex:1;min-height:750px;display:flex;">
+      <iframe src="data:application/pdf;base64,{resume_pdf_b64}#toolbar=1&navpanes=0&view=FitH"
+              style="width:100%;height:100%;min-height:750px;border:none;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.5);"
+              title="Master Resume PDF">
+      </iframe>
+    </div>
+    """ if has_pdf else ""
+
+    text_viewer_markup = f"""
+    <div id="text-resume-frame-container" class="{"hidden" if has_pdf else ""}" style="flex:1;">
+      <pre id="master-resume-text-el" class="resume-viewer-full">{resume_display}</pre>
+    </div>
+    """
 
     return f"""
 <!-- Full-Screen Candidate Profile Page -->
@@ -168,24 +185,29 @@ def _build_profile_page_html(profile: dict, resume_text: str) -> str:
           <span>🔒</span>
           <div>
             <strong>Local Privacy Guarantee</strong><br>
-            All candidate data is stored locally at <code>~/.applypilot/profile.json</code> and <code>resume.txt</code>. It never leaves your device.
+            All candidate data is stored locally at <code>~/.applypilot/profile.json</code> and <code>resume.pdf</code>. It never leaves your device.
           </div>
         </div>
       </div>
 
     </div>
 
-    <!-- Right Column: Full Master Resume Viewer -->
+    <!-- Right Column: Full Master Resume PDF/Text Viewer -->
     <div class="profile-main-col">
       <div class="profile-card resume-card-container">
         <div class="resume-card-header">
           <div>
-            <h3 class="profile-card-title" style="margin:0;border-bottom:none;">📄 Master Resume</h3>
-            <span style="font-size:0.75rem;color:var(--text-muted);">Stored at ~/.applypilot/resume.txt</span>
+            <h3 class="profile-card-title" style="margin:0;border-bottom:none;">📄 Master Resume {"(PDF)" if has_pdf else "(Text)"}</h3>
+            <span style="font-size:0.75rem;color:var(--text-muted);">Stored at ~/.applypilot/{"resume.pdf" if has_pdf else "resume.txt"}</span>
           </div>
-          <button class="btn-secondary" onclick="copyResumeText()">📋 Copy Resume Text</button>
+          <div style="display:flex;gap:0.5rem;align-items:center;">
+            {f'<button class="btn-secondary" onclick="toggleResumeView()">🔄 Switch View (PDF/Text)</button>' if has_pdf else ''}
+            {f'<a href="data:application/pdf;base64,{resume_pdf_b64}" download="Master_Resume.pdf" class="btn-secondary" style="text-decoration:none;">📥 Download PDF</a>' if has_pdf else ''}
+          </div>
         </div>
-        <pre id="master-resume-text-el" class="resume-viewer-full">{resume_display}</pre>
+
+        {pdf_viewer_markup}
+        {text_viewer_markup}
       </div>
     </div>
   </div>
@@ -220,6 +242,15 @@ def generate_dashboard(output_path: str | None = None) -> str:
     try:
         if RESUME_PATH.exists():
             resume_raw_text = RESUME_PATH.read_text(encoding="utf-8")
+    except Exception:
+        pass
+
+    import base64
+    resume_pdf_b64 = ""
+    try:
+        if RESUME_PDF_PATH.exists():
+            pdf_bytes = RESUME_PDF_PATH.read_bytes()
+            resume_pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
     except Exception:
         pass
 
@@ -487,6 +518,39 @@ def generate_dashboard(output_path: str | None = None) -> str:
     align-items: center;
     justify-content: space-between;
     gap: 1.5rem;
+  }}
+
+  .nav-right {{
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }}
+
+  .profile-nav-btn {{
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1.1rem;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.18), rgba(59, 130, 246, 0.18));
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    color: #c4b5fd;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: var(--font-body);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.15);
+  }}
+  .profile-nav-btn:hover {{
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(59, 130, 246, 0.35));
+    border-color: rgba(139, 92, 246, 0.7);
+    color: #ffffff;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(139, 92, 246, 0.3);
+  }}
+  .avatar-circle {{
+    font-size: 1.1rem;
   }}
 
   .brand {{
@@ -1743,9 +1807,17 @@ document.addEventListener('keydown', (e) => {{
     }}
   }}
 }});
+function toggleResumeView() {{
+  const pdfBox = document.getElementById('pdf-resume-frame-container');
+  const txtBox = document.getElementById('text-resume-frame-container');
+  if (pdfBox && txtBox) {{
+    pdfBox.classList.toggle('hidden');
+    txtBox.classList.toggle('hidden');
+  }}
+}}
 </script>
 
-{_build_profile_page_html(profile_data, resume_raw_text)}
+{_build_profile_page_html(profile_data, resume_raw_text, resume_pdf_b64)}
 
 </body>
 </html>"""
