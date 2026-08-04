@@ -74,6 +74,29 @@ def _parse_score_response(response: str) -> dict:
     return {"score": score, "keywords": keywords, "reasoning": reasoning}
 
 
+class QuotaExhaustedError(Exception):
+    """Raised when LLM API credits or quota are exhausted."""
+    pass
+
+
+def is_quota_error(exc: Exception) -> bool:
+    """Check if an exception indicates API quota or credit exhaustion."""
+    if isinstance(exc, QuotaExhaustedError):
+        return True
+    msg = str(exc).lower()
+    quota_indicators = (
+        "quota", "insufficient_quota", "out of credits", "credit limit",
+        "payment required", "billing", "exceeded your current quota",
+        "resource_exhausted", "resourcehasbeenexhausted", "balance",
+        "insufficient balance", "402 payment required", "rate_limit_exceeded"
+    )
+    if any(ind in msg for ind in quota_indicators):
+        return True
+    if hasattr(exc, "response") and getattr(exc.response, "status_code", None) in (402, 429):
+        return True
+    return False
+
+
 def score_job(resume_text: str, job: dict) -> dict:
     """Score a single job against the resume.
 
@@ -101,6 +124,8 @@ def score_job(resume_text: str, job: dict) -> dict:
         response = client.chat(messages, max_tokens=512, temperature=0.2)
         return _parse_score_response(response)
     except Exception as e:
+        if is_quota_error(e):
+            raise QuotaExhaustedError(f"LLM API quota or credits exhausted: {e}") from e
         log.error("LLM error scoring job '%s': %s", job.get("title", "?"), e)
         return {"score": 0, "keywords": "", "reasoning": f"LLM error: {e}"}
 
@@ -199,17 +224,53 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     t0 = time.time()
     completed = 0
     errors = 0
+    consecutive_errors = 0
 
     # Track high-score count for progress logging
     high_scores = 0
 
     try:
         for job in jobs:
-            result = score_job(resume_text, job)
+            try:
+                result = score_job(resume_text, job)
+            except QuotaExhaustedError as e:
+                elapsed = time.time() - t0
+                console.print(
+                    f"\n[bold yellow]API Quota / Credits Exhausted:[/bold yellow] {e}\n"
+                    f"[bold green]Stopping scoring stage gracefully at {completed}/{len(jobs)} jobs. "
+                    f"All {completed} scored jobs are safely saved in the database.[/bold green]"
+                )
+                distribution = _print_scoring_summary(conn, completed, errors, elapsed)
+                return {
+                    "status": "quota_exhausted",
+                    "scored": completed,
+                    "errors": errors,
+                    "elapsed": elapsed,
+                    "distribution": distribution,
+                }
+
             completed += 1
 
             if result["score"] == 0:
                 errors += 1
+                consecutive_errors += 1
+                if consecutive_errors >= 10:
+                    elapsed = time.time() - t0
+                    console.print(
+                        f"\n[bold yellow]10 consecutive LLM failures encountered. Pausing scoring run.[/bold yellow]\n"
+                        f"[bold green]All {completed} scored jobs are safely saved in the database.[/bold green]"
+                    )
+                    distribution = _print_scoring_summary(conn, completed, errors, elapsed)
+                    return {
+                        "status": "paused_consecutive_errors",
+                        "scored": completed,
+                        "errors": errors,
+                        "elapsed": elapsed,
+                        "distribution": distribution,
+                    }
+            else:
+                consecutive_errors = 0
+
             if result["score"] >= 7:
                 high_scores += 1
 
@@ -248,6 +309,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
         )
         distribution = _print_scoring_summary(conn, completed, errors, elapsed)
         return {
+            "status": "interrupted",
             "scored": completed,
             "errors": errors,
             "elapsed": elapsed,
@@ -258,8 +320,10 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
     distribution = _print_scoring_summary(conn, completed, errors, elapsed)
 
     return {
+        "status": "ok",
         "scored": completed,
         "errors": errors,
         "elapsed": elapsed,
         "distribution": distribution,
     }
+
