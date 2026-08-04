@@ -601,7 +601,7 @@ RESULT:FAILED:not_eligible_work_auth -- requires unauthorized work location
 RESULT:FAILED:reason -- any other failure (brief reason)
 
 == FORM TRICKS ==
-- Workday Sign-Up: Fill Email, Password, AND "Verify New Password". MANDATORY: Click the consent checkbox ("I acknowledge the above and, where legally required, provide my consent"). Passwords MUST have uppercase, lowercase, number & special char (e.g. Soham@Workday2026!).
+- Workday Sign-Up & Checkboxes: Fill Email, Password, AND "Verify New Password". MANDATORY: Check the consent box. Workday checkboxes are custom styled elements! If clicking the checkbox element directly doesn't check it, click the text label next to it ("I agree to create an account...") or click the parent container label. Confirm the checkmark appears before clicking Create Account.
 - Multi-page forms (Workday, Taleo, iCIMS): fill all fields on each page, then click Next/Continue. Repeat until final review page.
 - "Upload your resume" pre-fill page (Workday, Lever, etc.): Click "Select file" or upload area, use upload_file with resume PDF path. Wait for parsing to finish. Then click Next/Continue to reach the actual form.
 - Dropdown won't fill? Click to open it, then click the matching option.
