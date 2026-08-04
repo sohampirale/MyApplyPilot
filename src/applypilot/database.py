@@ -10,7 +10,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from applypilot.config import DB_PATH
+from applypilot.config import DB_PATH, get_active_candidate_id
 
 # Thread-local connection storage — each thread gets its own connection
 # (required for SQLite thread safety with parallel workers)
@@ -137,7 +137,73 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
     # Run migrations for any columns added after initial schema
     ensure_columns(conn)
 
+    # ── candidate_scores table (Multi-Student Isolation) ──────────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS candidate_scores (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            candidate_id         TEXT NOT NULL,
+            job_url              TEXT NOT NULL,
+            fit_score            INTEGER NOT NULL,
+            score_reasoning      TEXT,
+            tailored_resume_path TEXT,
+            tailored_at          TEXT,
+            cover_letter_path    TEXT,
+            cover_letter_at      TEXT,
+            applied_at           TEXT,
+            apply_status         TEXT,
+            apply_error          TEXT,
+            scored_at            TEXT NOT NULL,
+            FOREIGN KEY(job_url) REFERENCES jobs(url),
+            UNIQUE(candidate_id, job_url)
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_cs_candidate
+        ON candidate_scores(candidate_id)
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_cs_lookup
+        ON candidate_scores(candidate_id, fit_score)
+    """)
+    conn.commit()
+
+    # ── Auto-backfill legacy single-user scores ──────────────────────
+    _backfill_legacy_scores(conn)
+
     return conn
+
+
+def _backfill_legacy_scores(conn: sqlite3.Connection) -> None:
+    """Migrate legacy single-user scores from jobs table into candidate_scores.
+
+    Only runs once: checks if any candidate_scores exist for 'default'.
+    If not, copies all fit_score data from the jobs table.
+    """
+    existing = conn.execute(
+        "SELECT COUNT(*) FROM candidate_scores WHERE candidate_id = 'default'"
+    ).fetchone()[0]
+    if existing > 0:
+        return  # Already migrated
+
+    legacy_count = conn.execute(
+        "SELECT COUNT(*) FROM jobs WHERE fit_score IS NOT NULL"
+    ).fetchone()[0]
+    if legacy_count == 0:
+        return  # Nothing to migrate
+
+    conn.execute("""
+        INSERT OR IGNORE INTO candidate_scores (
+            candidate_id, job_url, fit_score, score_reasoning,
+            tailored_resume_path, tailored_at, scored_at
+        )
+        SELECT
+            'default', url, fit_score, score_reasoning,
+            tailored_resume_path, tailored_at,
+            COALESCE(scored_at, datetime('now'))
+        FROM jobs
+        WHERE fit_score IS NOT NULL
+    """)
+    conn.commit()
 
 
 # Complete column registry: column_name -> SQL type with optional default.
@@ -422,3 +488,54 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
         columns = rows[0].keys()
         return [dict(zip(columns, row)) for row in rows]
     return []
+
+
+def get_candidate_stats(conn: sqlite3.Connection | None = None,
+                       candidate_id: str | None = None) -> dict:
+    """Return job counts by pipeline stage for a specific candidate.
+
+    Uses candidate_scores table for candidate-specific metrics.
+
+    Args:
+        conn: Database connection. Uses get_connection() if None.
+        candidate_id: Candidate ID. Uses active candidate if None.
+
+    Returns:
+        Dictionary with candidate-specific stats.
+    """
+    if conn is None:
+        conn = get_connection()
+
+    cid = candidate_id or get_active_candidate_id()
+    stats: dict = {"candidate_id": cid}
+
+    # Total jobs in shared pool
+    stats["total"] = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+
+    # Candidate-specific scored count
+    stats["scored"] = conn.execute(
+        "SELECT COUNT(*) FROM candidate_scores WHERE candidate_id = ?", (cid,)
+    ).fetchone()[0]
+
+    # Candidate high-fit
+    stats["high_fit"] = conn.execute(
+        "SELECT COUNT(*) FROM candidate_scores WHERE candidate_id = ? AND fit_score >= 7", (cid,)
+    ).fetchone()[0]
+
+    # Score distribution for candidate
+    dist_rows = conn.execute(
+        "SELECT fit_score, COUNT(*) as cnt FROM candidate_scores "
+        "WHERE candidate_id = ? "
+        "GROUP BY fit_score ORDER BY fit_score DESC", (cid,)
+    ).fetchall()
+    stats["score_distribution"] = [(row[0], row[1]) for row in dist_rows]
+
+    # Pending scoring for this candidate
+    stats["unscored"] = conn.execute(
+        "SELECT COUNT(*) FROM jobs j "
+        "WHERE j.full_description IS NOT NULL "
+        "AND j.url NOT IN (SELECT job_url FROM candidate_scores WHERE candidate_id = ?)",
+        (cid,)
+    ).fetchone()[0]
+
+    return stats

@@ -34,13 +34,14 @@ VALID_STAGES = ("discover", "enrich", "score", "tailor", "cover", "pdf")
 # ---------------------------------------------------------------------------
 
 def _bootstrap() -> None:
-    """Common setup: load env, create dirs, init DB."""
-    from applypilot.config import load_env, ensure_dirs
+    """Common setup: load env, create dirs, init DB, migrate profile."""
+    from applypilot.config import load_env, ensure_dirs, migrate_legacy_profile
     from applypilot.database import init_db
 
     load_env()
     ensure_dirs()
     init_db()
+    migrate_legacy_profile()
 
 
 def _version_callback(value: bool) -> None:
@@ -459,5 +460,42 @@ def serve(
     start_server(port=port, open_browser=open_browser)
 
 
+@app.command()
+def candidates() -> None:
+    """List all student profiles and show active candidate."""
+    _bootstrap()
+    from applypilot.config import list_candidates, get_active_candidate_id
+    active_id = get_active_candidate_id()
+    c_list = list_candidates()
+
+    table = Table(title="Student Profiles", show_header=True, header_style="bold cyan")
+    table.add_column("Status", justify="center")
+    table.add_column("ID", style="bold")
+    table.add_column("Name")
+    table.add_column("Target Role")
+
+    for c in c_list:
+        status = "[green]✓ ACTIVE[/green]" if c["id"] == active_id else ""
+        table.add_row(status, c["id"], c["name"], c.get("target_role", "Candidate"))
+
+    console.print(table)
+
+
+@app.command()
+def switch(
+    candidate_id: str = typer.Argument(..., help="Candidate ID to switch to."),
+) -> None:
+    """Switch active student profile."""
+    _bootstrap()
+    from applypilot.config import set_active_candidate_id, CANDIDATES_DIR
+    cdir = CANDIDATES_DIR / candidate_id
+    if not cdir.exists() or not (cdir / "profile.json").exists():
+        console.print(f"[red]Student profile '{candidate_id}' does not exist.[/red]")
+        raise typer.Exit(code=1)
+    set_active_candidate_id(candidate_id)
+    console.print(f"[green]Active student switched to:[/green] [bold]{candidate_id}[/bold]")
+
+
 if __name__ == "__main__":
     app()
+

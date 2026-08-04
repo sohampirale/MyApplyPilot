@@ -14,7 +14,10 @@ from datetime import datetime, timezone
 from rich.console import Console
 from rich.table import Table
 
-from applypilot.config import RESUME_PATH, load_profile
+from applypilot.config import (
+    RESUME_PATH, load_profile,
+    get_active_candidate_id, get_candidate_resume_path,
+)
 from applypilot.database import get_connection, get_jobs_by_stage
 from applypilot.llm import get_client
 
@@ -130,25 +133,28 @@ def score_job(resume_text: str, job: dict) -> dict:
         return {"score": 0, "keywords": "", "reasoning": f"LLM error: {e}"}
 
 
-def _print_scoring_summary(conn, completed: int, errors: int, elapsed: float) -> list:
+def _print_scoring_summary(conn, completed: int, errors: int, elapsed: float,
+                          candidate_id: str | None = None) -> list:
     """Print score distribution summary and return distribution data."""
+    cid = candidate_id or get_active_candidate_id()
+
     if elapsed > 0:
         log.info("Done: %d scored in %.1fs (%.1f jobs/sec)", completed, elapsed,
                  completed / elapsed)
     else:
         log.info("Done: %d scored", completed)
 
-    # Score distribution
+    # Score distribution from candidate_scores
     dist = conn.execute("""
-        SELECT fit_score, COUNT(*) FROM jobs
-        WHERE fit_score IS NOT NULL
+        SELECT fit_score, COUNT(*) FROM candidate_scores
+        WHERE candidate_id = ?
         GROUP BY fit_score ORDER BY fit_score DESC
-    """).fetchall()
+    """, (cid,)).fetchall()
     distribution = [(row[0], row[1]) for row in dist]
 
     # Render score distribution summary table
     if distribution:
-        table = Table(title='Fit Scoring Summary', show_header=True, header_style='bold')
+        table = Table(title=f'Fit Scoring Summary ({cid})', show_header=True, header_style='bold')
         table.add_column('Score Tier', style='bold')
         table.add_column('Count', justify='right')
         table.add_column('Action', style='dim')
@@ -173,11 +179,12 @@ def _print_scoring_summary(conn, completed: int, errors: int, elapsed: float) ->
 
         console.print(table)
 
-    # Log top rejected title patterns
+    # Log top rejected title patterns for this candidate
     low_score_titles = conn.execute(
-        'SELECT title, COUNT(*) as cnt FROM jobs '
-        'WHERE fit_score IS NOT NULL AND fit_score <= 3 '
-        'GROUP BY title ORDER BY cnt DESC LIMIT 5'
+        'SELECT j.title, COUNT(*) as cnt FROM candidate_scores cs '
+        'JOIN jobs j ON j.url = cs.job_url '
+        'WHERE cs.candidate_id = ? AND cs.fit_score <= 3 '
+        'GROUP BY j.title ORDER BY cnt DESC LIMIT 5', (cid,)
     ).fetchall()
     if low_score_titles:
         log.info('Top filtered (score ≤ 3): %s',
@@ -186,21 +193,35 @@ def _print_scoring_summary(conn, completed: int, errors: int, elapsed: float) ->
     return distribution
 
 
-def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
-    """Score unscored jobs that have full descriptions.
+def run_scoring(limit: int = 0, rescore: bool = False,
+                candidate_id: str | None = None) -> dict:
+    """Score unscored jobs for a specific candidate.
 
-    Scores are committed to the database **immediately** after each job is
-    scored, so progress is never lost if the process is interrupted (Ctrl+C,
-    API credit exhaustion, etc.).
+    Scores are committed to the candidate_scores table **immediately** after
+    each job is scored, so progress is never lost if the process is interrupted
+    (Ctrl+C, API credit exhaustion, etc.).
 
     Args:
         limit: Maximum number of jobs to score in this run.
         rescore: If True, re-score all jobs (not just unscored ones).
+        candidate_id: Candidate to score for. Uses active candidate if None.
 
     Returns:
         {"scored": int, "errors": int, "elapsed": float, "distribution": list}
     """
-    resume_text = RESUME_PATH.read_text(encoding="utf-8")
+    cid = candidate_id or get_active_candidate_id()
+
+    # Load candidate-specific resume
+    resume_path = get_candidate_resume_path(cid)
+    if resume_path.exists():
+        resume_text = resume_path.read_text(encoding="utf-8")
+    elif RESUME_PATH.exists():
+        # Fallback to legacy resume
+        resume_text = RESUME_PATH.read_text(encoding="utf-8")
+    else:
+        log.error("No resume found for candidate '%s'", cid)
+        return {"scored": 0, "errors": 0, "elapsed": 0.0, "distribution": []}
+
     conn = get_connection()
 
     if rescore:
@@ -209,10 +230,20 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
             query += f" LIMIT {limit}"
         jobs = conn.execute(query).fetchall()
     else:
-        jobs = get_jobs_by_stage(conn=conn, stage="pending_score", limit=limit)
+        # Get jobs not yet scored for THIS candidate
+        query = """
+            SELECT j.* FROM jobs j
+            WHERE j.full_description IS NOT NULL
+              AND j.url NOT IN (
+                  SELECT job_url FROM candidate_scores WHERE candidate_id = ?
+              )
+        """
+        if limit > 0:
+            query += f" LIMIT {limit}"
+        jobs = conn.execute(query, (cid,)).fetchall()
 
     if not jobs:
-        log.info("No unscored jobs with descriptions found.")
+        log.info("No unscored jobs with descriptions found for candidate '%s'.", cid)
         return {"scored": 0, "errors": 0, "elapsed": 0.0, "distribution": []}
 
     # Convert sqlite3.Row to dicts if needed
@@ -220,7 +251,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
         columns = jobs[0].keys()
         jobs = [dict(zip(columns, row)) for row in jobs]
 
-    log.info("Scoring %d jobs sequentially...", len(jobs))
+    log.info("Scoring %d jobs for candidate '%s' sequentially...", len(jobs), cid)
     t0 = time.time()
     completed = 0
     errors = 0
@@ -240,7 +271,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
                     f"[bold green]Stopping scoring stage gracefully at {completed}/{len(jobs)} jobs. "
                     f"All {completed} scored jobs are safely saved in the database.[/bold green]"
                 )
-                distribution = _print_scoring_summary(conn, completed, errors, elapsed)
+                distribution = _print_scoring_summary(conn, completed, errors, elapsed, cid)
                 return {
                     "status": "quota_exhausted",
                     "scored": completed,
@@ -260,7 +291,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
                         f"\n[bold yellow]10 consecutive LLM failures encountered. Pausing scoring run.[/bold yellow]\n"
                         f"[bold green]All {completed} scored jobs are safely saved in the database.[/bold green]"
                     )
-                    distribution = _print_scoring_summary(conn, completed, errors, elapsed)
+                    distribution = _print_scoring_summary(conn, completed, errors, elapsed, cid)
                     return {
                         "status": "paused_consecutive_errors",
                         "scored": completed,
@@ -274,8 +305,21 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
             if result["score"] >= 7:
                 high_scores += 1
 
-            # ── Commit this score to DB immediately ──────────────────
+            # ── Commit to candidate_scores table immediately ──────────
             now = datetime.now(timezone.utc).isoformat()
+            conn.execute("""
+                INSERT INTO candidate_scores (
+                    candidate_id, job_url, fit_score, score_reasoning, scored_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(candidate_id, job_url) DO UPDATE SET
+                    fit_score = excluded.fit_score,
+                    score_reasoning = excluded.score_reasoning,
+                    scored_at = excluded.scored_at
+            """, (cid, job["url"], result["score"],
+                  f"{result['keywords']}\n{result['reasoning']}", now))
+            conn.commit()
+
+            # Also update legacy jobs table for backwards compat
             conn.execute(
                 "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ? WHERE url = ?",
                 (result["score"],
@@ -285,8 +329,8 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
             conn.commit()
 
             log.info(
-                "[%d/%d] score=%d  %s",
-                completed, len(jobs), result["score"], job.get("title", "?")[:60],
+                "[%d/%d] score=%d  %s  (candidate: %s)",
+                completed, len(jobs), result["score"], job.get("title", "?")[:60], cid,
             )
 
             # Every 100 jobs, log a progress summary
@@ -307,7 +351,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
             f"\n[yellow]Interrupted after scoring {completed}/{len(jobs)} jobs. "
             f"All {completed} scores are safely saved in the database.[/yellow]"
         )
-        distribution = _print_scoring_summary(conn, completed, errors, elapsed)
+        distribution = _print_scoring_summary(conn, completed, errors, elapsed, cid)
         return {
             "status": "interrupted",
             "scored": completed,
@@ -317,7 +361,7 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
         }
 
     elapsed = time.time() - t0
-    distribution = _print_scoring_summary(conn, completed, errors, elapsed)
+    distribution = _print_scoring_summary(conn, completed, errors, elapsed, cid)
 
     return {
         "status": "ok",
@@ -326,4 +370,5 @@ def run_scoring(limit: int = 0, rescore: bool = False) -> dict:
         "elapsed": elapsed,
         "distribution": distribution,
     }
+
 

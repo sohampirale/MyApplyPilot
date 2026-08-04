@@ -1,5 +1,6 @@
 """ApplyPilot configuration: paths, platform detection, user data."""
 
+import json
 import os
 import platform
 import shutil
@@ -20,6 +21,176 @@ ENV_PATH = APP_DIR / ".env"
 TAILORED_DIR = APP_DIR / "tailored_resumes"
 COVER_LETTER_DIR = APP_DIR / "cover_letters"
 LOG_DIR = APP_DIR / "logs"
+
+# ---------------------------------------------------------------------------
+# Multi-Student Candidate Isolation
+# ---------------------------------------------------------------------------
+CANDIDATES_DIR = APP_DIR / "candidates"
+ACTIVE_CANDIDATE_FILE = APP_DIR / "active_candidate.txt"
+
+# Default candidate ID used for the original single-user profile
+_DEFAULT_CANDIDATE_ID = "default"
+
+
+def get_active_candidate_id() -> str:
+    """Get the currently active candidate ID.
+
+    Reads from ~/.applypilot/active_candidate.txt. Falls back to 'default'.
+    """
+    if ACTIVE_CANDIDATE_FILE.exists():
+        cid = ACTIVE_CANDIDATE_FILE.read_text(encoding="utf-8").strip()
+        if cid:
+            return cid
+    return _DEFAULT_CANDIDATE_ID
+
+
+def set_active_candidate_id(candidate_id: str) -> None:
+    """Set the active candidate ID persistently."""
+    ACTIVE_CANDIDATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ACTIVE_CANDIDATE_FILE.write_text(candidate_id.strip(), encoding="utf-8")
+
+
+def get_candidate_dir(candidate_id: str | None = None) -> Path:
+    """Get (and create) the directory for a candidate.
+
+    Args:
+        candidate_id: Candidate identifier. Uses active candidate if None.
+
+    Returns:
+        Path to ~/.applypilot/candidates/<candidate_id>/
+    """
+    cid = candidate_id or get_active_candidate_id()
+    cdir = CANDIDATES_DIR / cid
+    cdir.mkdir(parents=True, exist_ok=True)
+    return cdir
+
+
+def get_candidate_profile_path(candidate_id: str | None = None) -> Path:
+    """Profile JSON path for the given (or active) candidate."""
+    return get_candidate_dir(candidate_id) / "profile.json"
+
+
+def get_candidate_resume_path(candidate_id: str | None = None) -> Path:
+    """Plain-text resume path for the given (or active) candidate."""
+    return get_candidate_dir(candidate_id) / "resume.txt"
+
+
+def get_candidate_resume_pdf_path(candidate_id: str | None = None) -> Path:
+    """PDF resume path for the given (or active) candidate."""
+    return get_candidate_dir(candidate_id) / "resume.pdf"
+
+
+def get_candidate_search_config_path(candidate_id: str | None = None) -> Path:
+    """Search config path for the given (or active) candidate."""
+    return get_candidate_dir(candidate_id) / "searches.yaml"
+
+
+def get_candidate_tailored_dir(candidate_id: str | None = None) -> Path:
+    """Tailored resumes directory for the given (or active) candidate."""
+    d = get_candidate_dir(candidate_id) / "tailored_resumes"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def get_candidate_cover_letter_dir(candidate_id: str | None = None) -> Path:
+    """Cover letters directory for the given (or active) candidate."""
+    d = get_candidate_dir(candidate_id) / "cover_letters"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def migrate_legacy_profile() -> str | None:
+    """Migrate single-user legacy profile into candidates/default/ directory.
+
+    If ~/.applypilot/profile.json exists but candidates/default/ doesn't,
+    copies profile.json, resume.txt, resume.pdf, and searches.yaml into the
+    default candidate directory. Sets active candidate to 'default'.
+
+    Returns:
+        The candidate_id that was migrated, or None if no migration was needed.
+    """
+    default_dir = CANDIDATES_DIR / _DEFAULT_CANDIDATE_ID
+    default_profile = default_dir / "profile.json"
+
+    # Already migrated or no legacy profile
+    if default_profile.exists() or not PROFILE_PATH.exists():
+        return None
+
+    default_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy files (don't move — preserve backwards compat)
+    for src, dst_name in [
+        (PROFILE_PATH, "profile.json"),
+        (RESUME_PATH, "resume.txt"),
+        (RESUME_PDF_PATH, "resume.pdf"),
+        (SEARCH_CONFIG_PATH, "searches.yaml"),
+    ]:
+        if src.exists():
+            shutil.copy2(str(src), str(default_dir / dst_name))
+
+    # Set as active
+    set_active_candidate_id(_DEFAULT_CANDIDATE_ID)
+    return _DEFAULT_CANDIDATE_ID
+
+
+def list_candidates() -> list[dict]:
+    """List all registered candidate profiles.
+
+    Returns:
+        List of dicts with keys: id, name, preferred_name, target_role, active.
+    """
+    # Ensure migration has run
+    migrate_legacy_profile()
+
+    if not CANDIDATES_DIR.exists():
+        return []
+
+    candidates = []
+    active_id = get_active_candidate_id()
+
+    for cdir in sorted(CANDIDATES_DIR.iterdir()):
+        if not cdir.is_dir():
+            continue
+        pfile = cdir / "profile.json"
+        if pfile.exists():
+            try:
+                pdata = json.loads(pfile.read_text(encoding="utf-8"))
+                personal = pdata.get("personal", {})
+                exp = pdata.get("experience", {})
+                candidates.append({
+                    "id": cdir.name,
+                    "name": personal.get("full_name") or cdir.name,
+                    "preferred_name": personal.get("preferred_name") or "",
+                    "target_role": exp.get("target_role") or "Candidate",
+                    "active": cdir.name == active_id,
+                })
+            except Exception:
+                candidates.append({
+                    "id": cdir.name,
+                    "name": cdir.name,
+                    "preferred_name": "",
+                    "target_role": "Candidate",
+                    "active": cdir.name == active_id,
+                })
+    return candidates
+
+
+def load_candidate_profile(candidate_id: str | None = None) -> dict:
+    """Load a candidate's profile.json.
+
+    Falls back to legacy PROFILE_PATH if candidate profile doesn't exist.
+    """
+    cid = candidate_id or get_active_candidate_id()
+    path = get_candidate_profile_path(cid)
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    # Fallback to legacy path
+    if PROFILE_PATH.exists():
+        return json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    raise FileNotFoundError(
+        f"Profile not found for candidate '{cid}'. Run `applypilot init` first."
+    )
+
 
 # Chrome worker isolation (use snap/chromium/common on Linux if snap chromium is present to prevent AppArmor crashes)
 _snap_dir = Path.home() / "snap" / "chromium" / "common" / "applypilot"

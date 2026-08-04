@@ -19,7 +19,13 @@ from urllib.parse import quote as url_quote
 
 from rich.console import Console
 
-from applypilot.config import APP_DIR, DB_PATH, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH
+from applypilot.config import (
+    APP_DIR, DB_PATH, PROFILE_PATH, RESUME_PATH, RESUME_PDF_PATH,
+    get_active_candidate_id, list_candidates, set_active_candidate_id,
+    get_candidate_profile_path, get_candidate_resume_path,
+    get_candidate_resume_pdf_path, load_candidate_profile,
+    migrate_legacy_profile,
+)
 from applypilot.database import get_connection
 
 console = Console()
@@ -231,31 +237,46 @@ def _build_profile_page_html(profile: dict, resume_text: str, resume_pdf_b64: st
 
 
 
-def generate_dashboard(output_path: str | None = None) -> str:
+def generate_dashboard(output_path: str | None = None,
+                       candidate_id: str | None = None) -> str:
     """Generate an HTML dashboard of all jobs with fit scores.
 
     Args:
         output_path: Where to write the HTML file. Defaults to ~/.applypilot/dashboard.html.
+        candidate_id: Candidate to generate dashboard for. Uses active if None.
 
     Returns:
         Absolute path to the generated HTML file.
     """
+    # Ensure legacy profile is migrated
+    migrate_legacy_profile()
+
+    cid = candidate_id or get_active_candidate_id()
     out = Path(output_path) if output_path else APP_DIR / "dashboard.html"
 
     conn = get_connection()
 
-    # Load candidate profile & resume for Profile modal
+    # Load candidate-specific profile & resume
     import json as _json
     profile_data: dict = {}
     try:
-        if PROFILE_PATH.exists():
-            profile_data = _json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+        profile_data = load_candidate_profile(cid)
     except Exception:
-        pass
+        try:
+            if PROFILE_PATH.exists():
+                profile_data = _json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    # Candidate-specific resume paths
+    candidate_resume_path = get_candidate_resume_path(cid)
+    candidate_pdf_path = get_candidate_resume_pdf_path(cid)
 
     resume_raw_text = ""
     try:
-        if RESUME_PATH.exists():
+        if candidate_resume_path.exists():
+            resume_raw_text = candidate_resume_path.read_text(encoding="utf-8")
+        elif RESUME_PATH.exists():
             resume_raw_text = RESUME_PATH.read_text(encoding="utf-8")
     except Exception:
         pass
@@ -263,57 +284,72 @@ def generate_dashboard(output_path: str | None = None) -> str:
     import base64
     resume_pdf_b64 = ""
     try:
-        if RESUME_PDF_PATH.exists():
+        if candidate_pdf_path.exists():
+            pdf_bytes = candidate_pdf_path.read_bytes()
+            resume_pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+        elif RESUME_PDF_PATH.exists():
             pdf_bytes = RESUME_PDF_PATH.read_bytes()
             resume_pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
     except Exception:
         pass
 
-    # Stats
+    # Build candidate switcher data
+    all_candidates = list_candidates()
+    candidate_name = cid
+    for c in all_candidates:
+        if c["id"] == cid:
+            candidate_name = c.get("preferred_name") or c.get("name") or cid
+            break
+
+    # Stats — candidate-specific from candidate_scores
     total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
     ready = conn.execute(
         "SELECT COUNT(*) FROM jobs "
         "WHERE full_description IS NOT NULL AND application_url IS NOT NULL"
     ).fetchone()[0]
     scored = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE fit_score IS NOT NULL"
+        "SELECT COUNT(*) FROM candidate_scores WHERE candidate_id = ?", (cid,)
     ).fetchone()[0]
     high_fit = conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE fit_score >= 7"
+        "SELECT COUNT(*) FROM candidate_scores WHERE candidate_id = ? AND fit_score >= 7", (cid,)
     ).fetchone()[0]
 
-    # Score distribution
+    # Score distribution for this candidate
     score_dist: dict[int, int] = {}
     if scored:
         rows = conn.execute(
-            "SELECT fit_score, COUNT(*) FROM jobs "
-            "WHERE fit_score IS NOT NULL "
-            "GROUP BY fit_score ORDER BY fit_score DESC"
+            "SELECT fit_score, COUNT(*) FROM candidate_scores "
+            "WHERE candidate_id = ? "
+            "GROUP BY fit_score ORDER BY fit_score DESC", (cid,)
         ).fetchall()
         for r in rows:
             score_dist[r[0]] = r[1]
 
-    # Site stats
+    # Site stats for this candidate
     site_stats = conn.execute("""
-        SELECT site,
+        SELECT j.site,
                COUNT(*) as total,
-               SUM(CASE WHEN fit_score >= 7 THEN 1 ELSE 0 END) as high_fit,
-               SUM(CASE WHEN fit_score BETWEEN 5 AND 6 THEN 1 ELSE 0 END) as mid_fit,
-               SUM(CASE WHEN fit_score < 5 AND fit_score IS NOT NULL THEN 1 ELSE 0 END) as low_fit,
-               SUM(CASE WHEN fit_score IS NULL THEN 1 ELSE 0 END) as unscored,
-               ROUND(AVG(fit_score), 1) as avg_score
-        FROM jobs GROUP BY site ORDER BY high_fit DESC, total DESC
-    """).fetchall()
+               SUM(CASE WHEN cs.fit_score >= 7 THEN 1 ELSE 0 END) as high_fit,
+               SUM(CASE WHEN cs.fit_score BETWEEN 5 AND 6 THEN 1 ELSE 0 END) as mid_fit,
+               SUM(CASE WHEN cs.fit_score < 5 THEN 1 ELSE 0 END) as low_fit,
+               0 as unscored,
+               ROUND(AVG(cs.fit_score), 1) as avg_score
+        FROM candidate_scores cs
+        JOIN jobs j ON j.url = cs.job_url
+        WHERE cs.candidate_id = ?
+        GROUP BY j.site ORDER BY high_fit DESC, total DESC
+    """, (cid,)).fetchall()
 
-    # All scored jobs (1+), ordered by score desc
+    # All scored jobs for this candidate (1+), ordered by score desc
     jobs = conn.execute("""
-        SELECT url, title, salary, description, location, site, strategy,
-               full_description, application_url, detail_error,
-               fit_score, score_reasoning, tailored_resume_path
-        FROM jobs
-        WHERE fit_score >= 1
-        ORDER BY fit_score DESC, site, title
-    """).fetchall()
+        SELECT j.url, j.title, j.salary, j.description, j.location, j.site, j.strategy,
+               j.full_description, j.application_url, j.detail_error,
+               cs.fit_score, cs.score_reasoning, cs.tailored_resume_path
+        FROM candidate_scores cs
+        JOIN jobs j ON j.url = cs.job_url
+        WHERE cs.candidate_id = ? AND cs.fit_score >= 1
+        ORDER BY cs.fit_score DESC, j.site, j.title
+    """, (cid,)).fetchall()
 
     # Color map per site
     colors = {
@@ -1522,6 +1558,62 @@ def generate_dashboard(output_path: str | None = None) -> str:
     .profile-field {{ flex-direction: column; gap: 0.2rem; }}
     .profile-field-label {{ min-width: unset; }}
   }}
+  /* ── Candidate Switcher ──────────────────────────────────── */
+  .candidate-switcher-wrapper {{
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    border-radius: 12px;
+    padding: 0.35rem 0.75rem;
+  }}
+  .switcher-label {{
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #34d399;
+    white-space: nowrap;
+  }}
+  .candidate-switcher-select {{
+    background: rgba(17, 24, 39, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #f3f4f6;
+    padding: 0.35rem 0.65rem;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    outline: none;
+    cursor: pointer;
+    min-width: 120px;
+    transition: all 0.2s;
+  }}
+  .candidate-switcher-select:hover {{
+    border-color: rgba(16, 185, 129, 0.5);
+  }}
+  .candidate-switcher-select:focus {{
+    border-color: #34d399;
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+  }}
+  .btn-add-student {{
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    color: #34d399;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+  }}
+  .btn-add-student:hover {{
+    background: rgba(16, 185, 129, 0.3);
+    color: #fff;
+    transform: scale(1.05);
+  }}
+
 </style>
 </head>
 <body>
@@ -1537,6 +1629,13 @@ def generate_dashboard(output_path: str | None = None) -> str:
   </div>
 
   <div class="nav-right">
+    <div class="candidate-switcher-wrapper">
+      <span class="switcher-label">🎓 Student:</span>
+      <select id="candidate-switcher" class="candidate-switcher-select" onchange="switchCandidate(this.value)">
+        {''.join(f'<option value="{escape(c["id"])}" {"selected" if c["id"] == cid else ""}>{escape(c.get("preferred_name") or c.get("name", c["id"]))} ({escape(c.get("target_role", ""))})</option>' for c in all_candidates)}
+      </select>
+      <button class="btn-add-student" onclick="openAddStudentModal()" title="Add a new student profile">➕</button>
+    </div>
     <button class="profile-nav-btn" onclick="showProfileView()" title="View Candidate Profile & Master Resume">
       <span class="avatar-circle">👤</span> Candidate Profile
     </button>
@@ -1546,6 +1645,29 @@ def generate_dashboard(output_path: str | None = None) -> str:
     </div>
   </div>
 </div>
+
+<!-- Add Student Modal -->
+<dialog id="add-student-modal" style="margin:auto;border:1px solid rgba(96,165,250,0.3);border-radius:20px;background:#0f172a;color:#f3f4f6;padding:2rem;max-width:480px;width:90vw;box-shadow:0 25px 50px -12px rgba(0,0,0,0.7);">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid rgba(255,255,255,0.08);">
+    <h3 style="font-family:var(--font-heading);font-size:1.2rem;font-weight:700;">➕ Add New Student</h3>
+    <button onclick="document.getElementById('add-student-modal').close()" style="background:rgba(255,255,255,0.08);border:none;color:#9ca3af;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:1.1rem;">×</button>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:1rem;">
+    <div>
+      <label style="font-size:0.8rem;color:#9ca3af;display:block;margin-bottom:0.4rem;">Student ID (lowercase, no spaces)</label>
+      <input id="new-student-id" type="text" placeholder="e.g. priya_pharmacy" style="width:100%;background:rgba(17,24,39,0.9);border:1px solid rgba(255,255,255,0.12);color:#f3f4f6;padding:0.6rem 0.9rem;border-radius:10px;font-size:0.9rem;outline:none;">
+    </div>
+    <div>
+      <label style="font-size:0.8rem;color:#9ca3af;display:block;margin-bottom:0.4rem;">Full Name</label>
+      <input id="new-student-name" type="text" placeholder="e.g. Priya Sharma" style="width:100%;background:rgba(17,24,39,0.9);border:1px solid rgba(255,255,255,0.12);color:#f3f4f6;padding:0.6rem 0.9rem;border-radius:10px;font-size:0.9rem;outline:none;">
+    </div>
+    <div>
+      <label style="font-size:0.8rem;color:#9ca3af;display:block;margin-bottom:0.4rem;">Target Role / Domain</label>
+      <input id="new-student-role" type="text" placeholder="e.g. Pharmacist, Architect, Software Engineer" style="width:100%;background:rgba(17,24,39,0.9);border:1px solid rgba(255,255,255,0.12);color:#f3f4f6;padding:0.6rem 0.9rem;border-radius:10px;font-size:0.9rem;outline:none;">
+    </div>
+    <button onclick="createStudent()" style="margin-top:0.5rem;width:100%;padding:0.7rem;background:linear-gradient(135deg,#3b82f6,#2563eb);border:1px solid #60a5fa;color:#fff;border-radius:10px;font-size:0.95rem;font-weight:600;cursor:pointer;transition:all 0.2s;">Create Student Profile</button>
+  </div>
+</dialog>
 
 <div class="container">
 
@@ -1860,6 +1982,49 @@ function applyFilters() {{
 }}
 
 applyFilters();
+
+// ── Candidate Switcher & Add Student Handlers ─────────────────
+function switchCandidate(candidateId) {{
+  // Reload page with new candidate via server
+  window.location.href = '/?candidate=' + encodeURIComponent(candidateId);
+}}
+
+function openAddStudentModal() {{
+  document.getElementById('add-student-modal')?.showModal();
+}}
+
+async function createStudent() {{
+  const idEl = document.getElementById('new-student-id');
+  const nameEl = document.getElementById('new-student-name');
+  const roleEl = document.getElementById('new-student-role');
+  const sid = (idEl?.value || '').trim().toLowerCase().replace(/\\s+/g, '_');
+  const sname = (nameEl?.value || '').trim();
+  const srole = (roleEl?.value || '').trim() || 'Candidate';
+
+  if (!sid) {{
+    showToast('Please enter a Student ID');
+    return;
+  }}
+
+  try {{
+    const res = await fetch('/api/candidates/create', {{
+      method: 'POST',
+      headers: {{ 'Content-Type': 'application/json' }},
+      body: JSON.stringify({{ candidate_id: sid, name: sname, target_role: srole }})
+    }});
+    const data = await res.json();
+    if (data.status === 'ok') {{
+      showToast(`Student "${{sname || sid}}" created successfully!`);
+      document.getElementById('add-student-modal')?.close();
+      // Reload to show the new candidate's dashboard
+      setTimeout(() => window.location.href = '/?candidate=' + encodeURIComponent(sid), 500);
+    }} else {{
+      showToast('Error: ' + (data.error || 'Failed to create student'));
+    }}
+  }} catch (e) {{
+    showToast('Network error creating student');
+  }}
+}}
 // ── Full-Screen Profile View Handlers ───────────────────────
 function showProfileView() {{
   document.getElementById('profile-page-view')?.classList.remove('hidden');
