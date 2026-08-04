@@ -1785,7 +1785,7 @@ def generate_dashboard(output_path: str | None = None,
 <div id="toast-container" class="toast-container"></div>
 
 <style>
-  .show-more-wrapper {{ grid-column: 1 / -1; display: flex; justify-content: center; margin-top: 1.5rem; }}
+  .show-more-wrapper {{ grid-column: 1 / -1; display: flex; justify-content: center; margin-top: 1.25rem; margin-bottom: 2rem; }}
   .show-more-btn {{
     background: rgba(59, 130, 246, 0.12);
     border: 1px solid rgba(59, 130, 246, 0.4);
@@ -2000,6 +2000,7 @@ function applyFilters() {{
     const cards = Array.from(grid.querySelectorAll('.job-card'));
     let gridMatching = 0;
 
+    const limit = score >= 7 ? 6 : (score >= 5 ? 4 : 2);
     cards.forEach(card => {{
       total++;
       const cardScore = parseInt(card.dataset.score) || 0;
@@ -2013,7 +2014,7 @@ function applyFilters() {{
       if (scoreMatch && siteMatch && textMatch) {{
         gridMatching++;
         const isExpanded = expandedGrids.has(score) || Boolean(searchText) || Boolean(selectedSite);
-        if (isExpanded || gridMatching <= 6) {{
+        if (isExpanded || gridMatching <= limit) {{
           card.classList.remove('hidden');
           shown++;
         }} else {{
@@ -2032,11 +2033,11 @@ function applyFilters() {{
     }}
 
     const isExpanded = expandedGrids.has(score) || Boolean(searchText) || Boolean(selectedSite);
-    const hiddenInGrid = gridMatching - 6;
+    const hiddenInGrid = gridMatching - limit;
 
-    if (gridMatching > 6 && !searchText && !selectedSite) {{
+    if (gridMatching > limit && !searchText && !selectedSite) {{
       btnWrapper.style.display = 'flex';
-      btnWrapper.innerHTML = `<button class="show-more-btn" onclick="toggleGridExpand(${{score}})">${{isExpanded ? 'Collapse' : 'Show More (+' + hiddenInGrid + ' jobs)'}}</button>`;
+      btnWrapper.innerHTML = `<button class="show-more-btn" onclick="toggleGridExpand(${{score}})">${{isExpanded ? 'Show Less Score ' + score + ' Jobs ↑' : 'Show More Score ' + score + ' Jobs (+' + hiddenInGrid + ' jobs) ↓'}}</button>`;
     }} else {{
       btnWrapper.style.display = 'none';
     }}
