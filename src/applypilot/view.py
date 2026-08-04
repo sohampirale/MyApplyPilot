@@ -301,31 +301,39 @@ def generate_dashboard(output_path: str | None = None,
             candidate_name = c.get("preferred_name") or c.get("name") or cid
             break
 
-    # Stats — candidate-specific from candidate_scores
-    total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    from applypilot.domains import get_domain_for_candidate
+    domain = get_domain_for_candidate(cid)
+
+    # Stats — candidate and domain-specific from candidate_scores & jobs pool
+    total = conn.execute("SELECT COUNT(*) FROM jobs WHERE domain = ?", (domain,)).fetchone()[0]
     ready = conn.execute(
         "SELECT COUNT(*) FROM jobs "
-        "WHERE full_description IS NOT NULL AND application_url IS NOT NULL"
+        "WHERE full_description IS NOT NULL AND application_url IS NOT NULL AND domain = ?", (domain,)
     ).fetchone()[0]
     scored = conn.execute(
-        "SELECT COUNT(*) FROM candidate_scores WHERE candidate_id = ?", (cid,)
+        "SELECT COUNT(*) FROM candidate_scores cs "
+        "JOIN jobs j ON j.url = cs.job_url "
+        "WHERE cs.candidate_id = ? AND j.domain = ?", (cid, domain)
     ).fetchone()[0]
     high_fit = conn.execute(
-        "SELECT COUNT(*) FROM candidate_scores WHERE candidate_id = ? AND fit_score >= 7", (cid,)
+        "SELECT COUNT(*) FROM candidate_scores cs "
+        "JOIN jobs j ON j.url = cs.job_url "
+        "WHERE cs.candidate_id = ? AND cs.fit_score >= 7 AND j.domain = ?", (cid, domain)
     ).fetchone()[0]
 
-    # Score distribution for this candidate
+    # Score distribution for this candidate (domain filtered)
     score_dist: dict[int, int] = {}
     if scored:
         rows = conn.execute(
-            "SELECT fit_score, COUNT(*) FROM candidate_scores "
-            "WHERE candidate_id = ? "
-            "GROUP BY fit_score ORDER BY fit_score DESC", (cid,)
+            "SELECT cs.fit_score, COUNT(*) FROM candidate_scores cs "
+            "JOIN jobs j ON j.url = cs.job_url "
+            "WHERE cs.candidate_id = ? AND j.domain = ? "
+            "GROUP BY cs.fit_score ORDER BY cs.fit_score DESC", (cid, domain)
         ).fetchall()
         for r in rows:
             score_dist[r[0]] = r[1]
 
-    # Site stats for this candidate
+    # Site stats for this candidate (domain filtered)
     site_stats = conn.execute("""
         SELECT j.site,
                COUNT(*) as total,
@@ -336,20 +344,20 @@ def generate_dashboard(output_path: str | None = None,
                ROUND(AVG(cs.fit_score), 1) as avg_score
         FROM candidate_scores cs
         JOIN jobs j ON j.url = cs.job_url
-        WHERE cs.candidate_id = ?
+        WHERE cs.candidate_id = ? AND j.domain = ?
         GROUP BY j.site ORDER BY high_fit DESC, total DESC
-    """, (cid,)).fetchall()
+    """, (cid, domain)).fetchall()
 
-    # All scored jobs for this candidate (1+), ordered by score desc
+    # All scored jobs for this candidate (1+) in their domain, ordered by score desc
     jobs = conn.execute("""
         SELECT j.url, j.title, j.salary, j.description, j.location, j.site, j.strategy,
                j.full_description, j.application_url, j.detail_error,
                cs.fit_score, cs.score_reasoning, cs.tailored_resume_path
         FROM candidate_scores cs
         JOIN jobs j ON j.url = cs.job_url
-        WHERE cs.candidate_id = ? AND cs.fit_score >= 1
+        WHERE cs.candidate_id = ? AND cs.fit_score >= 1 AND j.domain = ?
         ORDER BY cs.fit_score DESC, j.site, j.title
-    """, (cid,)).fetchall()
+    """, (cid, domain)).fetchall()
 
     # Color map per site
     colors = {
@@ -1662,7 +1670,16 @@ def generate_dashboard(output_path: str | None = None,
       <input id="new-student-name" type="text" placeholder="e.g. Priya Sharma" style="width:100%;background:rgba(17,24,39,0.9);border:1px solid rgba(255,255,255,0.12);color:#f3f4f6;padding:0.6rem 0.9rem;border-radius:10px;font-size:0.9rem;outline:none;">
     </div>
     <div>
-      <label style="font-size:0.8rem;color:#9ca3af;display:block;margin-bottom:0.4rem;">Target Role / Domain</label>
+      <label style="font-size:0.8rem;color:#9ca3af;display:block;margin-bottom:0.4rem;">Academic Discipline / Domain Engine</label>
+      <select id="new-student-domain" style="width:100%;background:rgba(17,24,39,0.9);border:1px solid rgba(255,255,255,0.12);color:#f3f4f6;padding:0.6rem 0.9rem;border-radius:10px;font-size:0.9rem;outline:none;cursor:pointer;">
+        <option value="engineering">💻 Software &amp; AI Engineering Engine</option>
+        <option value="pharmacy">💊 Pharmacy &amp; Lifesciences Engine</option>
+        <option value="architecture">🏛️ Architecture &amp; Urban Design Engine</option>
+        <option value="mba">📊 MBA &amp; Business Management Engine</option>
+      </select>
+    </div>
+    <div>
+      <label style="font-size:0.8rem;color:#9ca3af;display:block;margin-bottom:0.4rem;">Target Role Title</label>
       <input id="new-student-role" type="text" placeholder="e.g. Pharmacist, Architect, Software Engineer" style="width:100%;background:rgba(17,24,39,0.9);border:1px solid rgba(255,255,255,0.12);color:#f3f4f6;padding:0.6rem 0.9rem;border-radius:10px;font-size:0.9rem;outline:none;">
     </div>
     <button onclick="createStudent()" style="margin-top:0.5rem;width:100%;padding:0.7rem;background:linear-gradient(135deg,#3b82f6,#2563eb);border:1px solid #60a5fa;color:#fff;border-radius:10px;font-size:0.95rem;font-weight:600;cursor:pointer;transition:all 0.2s;">Create Student Profile</button>
@@ -1997,9 +2014,11 @@ async function createStudent() {{
   const idEl = document.getElementById('new-student-id');
   const nameEl = document.getElementById('new-student-name');
   const roleEl = document.getElementById('new-student-role');
+  const domainEl = document.getElementById('new-student-domain');
   const sid = (idEl?.value || '').trim().toLowerCase().replace(/\\s+/g, '_');
   const sname = (nameEl?.value || '').trim();
   const srole = (roleEl?.value || '').trim() || 'Candidate';
+  const sdomain = (domainEl?.value || 'engineering').trim();
 
   if (!sid) {{
     showToast('Please enter a Student ID');
@@ -2010,7 +2029,7 @@ async function createStudent() {{
     const res = await fetch('/api/candidates/create', {{
       method: 'POST',
       headers: {{ 'Content-Type': 'application/json' }},
-      body: JSON.stringify({{ candidate_id: sid, name: sname, target_role: srole }})
+      body: JSON.stringify({{ candidate_id: sid, name: sname, target_role: srole, domain: sdomain }})
     }});
     const data = await res.json();
     if (data.status === 'ok') {{

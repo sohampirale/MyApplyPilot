@@ -129,7 +129,10 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             last_attempted_at     TEXT,
             apply_duration_ms     INTEGER,
             apply_task_id         TEXT,
-            verification_confidence TEXT
+            verification_confidence TEXT,
+
+            -- Domain isolation
+            domain                TEXT DEFAULT 'engineering'
         )
     """)
     conn.commit()
@@ -246,6 +249,8 @@ _ALL_COLUMNS: dict[str, str] = {
     "apply_duration_ms": "INTEGER",
     "apply_task_id": "TEXT",
     "verification_confidence": "TEXT",
+    # Domain isolation
+    "domain": "TEXT DEFAULT 'engineering'",
 }
 
 
@@ -393,7 +398,7 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
 
 
 def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
-               site: str, strategy: str) -> tuple[int, int]:
+               site: str, strategy: str, domain: str = "engineering") -> tuple[int, int]:
     """Store discovered jobs, skipping duplicates by URL.
 
     Args:
@@ -401,6 +406,7 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
         jobs: List of job dicts with keys: url, title, salary, description, location.
         site: Source site name (e.g. "RemoteOK", "Dice").
         strategy: Extraction strategy used (e.g. "json_ld", "api_response", "css_selectors").
+        domain: Domain tag for this job pool (e.g. "engineering", "pharmacy").
 
     Returns:
         Tuple of (new_count, duplicate_count).
@@ -415,10 +421,10 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             continue
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, domain) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, job.get("title"), job.get("salary"), job.get("description"),
-                 job.get("location"), site, strategy, now),
+                 job.get("location"), site, strategy, now, domain),
             )
             new += 1
         except sqlite3.IntegrityError:
@@ -491,14 +497,17 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
 
 
 def get_candidate_stats(conn: sqlite3.Connection | None = None,
-                       candidate_id: str | None = None) -> dict:
+                       candidate_id: str | None = None,
+                       domain: str | None = None) -> dict:
     """Return job counts by pipeline stage for a specific candidate.
 
     Uses candidate_scores table for candidate-specific metrics.
+    When domain is specified, filters the shared job pool by domain.
 
     Args:
         conn: Database connection. Uses get_connection() if None.
         candidate_id: Candidate ID. Uses active candidate if None.
+        domain: Domain to filter jobs by. If None, shows all domains.
 
     Returns:
         Dictionary with candidate-specific stats.
@@ -507,35 +516,67 @@ def get_candidate_stats(conn: sqlite3.Connection | None = None,
         conn = get_connection()
 
     cid = candidate_id or get_active_candidate_id()
-    stats: dict = {"candidate_id": cid}
+    stats: dict = {"candidate_id": cid, "domain": domain}
 
-    # Total jobs in shared pool
-    stats["total"] = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    if domain:
+        # Total jobs in this domain's pool
+        stats["total"] = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE domain = ?", (domain,)
+        ).fetchone()[0]
+    else:
+        stats["total"] = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
 
-    # Candidate-specific scored count
-    stats["scored"] = conn.execute(
-        "SELECT COUNT(*) FROM candidate_scores WHERE candidate_id = ?", (cid,)
-    ).fetchone()[0]
+    # Candidate-specific scored count (joined with domain filter)
+    if domain:
+        stats["scored"] = conn.execute(
+            "SELECT COUNT(*) FROM candidate_scores cs "
+            "JOIN jobs j ON j.url = cs.job_url "
+            "WHERE cs.candidate_id = ? AND j.domain = ?", (cid, domain)
+        ).fetchone()[0]
+        stats["high_fit"] = conn.execute(
+            "SELECT COUNT(*) FROM candidate_scores cs "
+            "JOIN jobs j ON j.url = cs.job_url "
+            "WHERE cs.candidate_id = ? AND cs.fit_score >= 7 AND j.domain = ?", (cid, domain)
+        ).fetchone()[0]
+    else:
+        stats["scored"] = conn.execute(
+            "SELECT COUNT(*) FROM candidate_scores WHERE candidate_id = ?", (cid,)
+        ).fetchone()[0]
+        stats["high_fit"] = conn.execute(
+            "SELECT COUNT(*) FROM candidate_scores WHERE candidate_id = ? AND fit_score >= 7", (cid,)
+        ).fetchone()[0]
 
-    # Candidate high-fit
-    stats["high_fit"] = conn.execute(
-        "SELECT COUNT(*) FROM candidate_scores WHERE candidate_id = ? AND fit_score >= 7", (cid,)
-    ).fetchone()[0]
-
-    # Score distribution for candidate
-    dist_rows = conn.execute(
-        "SELECT fit_score, COUNT(*) as cnt FROM candidate_scores "
-        "WHERE candidate_id = ? "
-        "GROUP BY fit_score ORDER BY fit_score DESC", (cid,)
-    ).fetchall()
+    # Score distribution for candidate (with domain filter)
+    if domain:
+        dist_rows = conn.execute(
+            "SELECT cs.fit_score, COUNT(*) as cnt FROM candidate_scores cs "
+            "JOIN jobs j ON j.url = cs.job_url "
+            "WHERE cs.candidate_id = ? AND j.domain = ? "
+            "GROUP BY cs.fit_score ORDER BY cs.fit_score DESC", (cid, domain)
+        ).fetchall()
+    else:
+        dist_rows = conn.execute(
+            "SELECT fit_score, COUNT(*) as cnt FROM candidate_scores "
+            "WHERE candidate_id = ? "
+            "GROUP BY fit_score ORDER BY fit_score DESC", (cid,)
+        ).fetchall()
     stats["score_distribution"] = [(row[0], row[1]) for row in dist_rows]
 
-    # Pending scoring for this candidate
-    stats["unscored"] = conn.execute(
-        "SELECT COUNT(*) FROM jobs j "
-        "WHERE j.full_description IS NOT NULL "
-        "AND j.url NOT IN (SELECT job_url FROM candidate_scores WHERE candidate_id = ?)",
-        (cid,)
-    ).fetchone()[0]
+    # Pending scoring for this candidate (domain-filtered)
+    if domain:
+        stats["unscored"] = conn.execute(
+            "SELECT COUNT(*) FROM jobs j "
+            "WHERE j.full_description IS NOT NULL AND j.domain = ? "
+            "AND j.url NOT IN (SELECT job_url FROM candidate_scores WHERE candidate_id = ?)",
+            (domain, cid)
+        ).fetchone()[0]
+    else:
+        stats["unscored"] = conn.execute(
+            "SELECT COUNT(*) FROM jobs j "
+            "WHERE j.full_description IS NOT NULL "
+            "AND j.url NOT IN (SELECT job_url FROM candidate_scores WHERE candidate_id = ?)",
+            (cid,)
+        ).fetchone()[0]
 
     return stats
+

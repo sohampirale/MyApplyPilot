@@ -19,6 +19,7 @@ from applypilot.config import (
     get_active_candidate_id, get_candidate_resume_path,
 )
 from applypilot.database import get_connection, get_jobs_by_stage
+from applypilot.domains import get_domain_for_candidate
 from applypilot.llm import get_client
 
 log = logging.getLogger(__name__)
@@ -210,6 +211,7 @@ def run_scoring(limit: int = 0, rescore: bool = False,
         {"scored": int, "errors": int, "elapsed": float, "distribution": list}
     """
     cid = candidate_id or get_active_candidate_id()
+    domain = get_domain_for_candidate(cid)
 
     # Load candidate-specific resume
     resume_path = get_candidate_resume_path(cid)
@@ -225,22 +227,25 @@ def run_scoring(limit: int = 0, rescore: bool = False,
     conn = get_connection()
 
     if rescore:
-        query = "SELECT * FROM jobs WHERE full_description IS NOT NULL"
+        query = "SELECT * FROM jobs WHERE full_description IS NOT NULL AND domain = ?"
+        params = [domain]
         if limit > 0:
             query += f" LIMIT {limit}"
-        jobs = conn.execute(query).fetchall()
+        jobs = conn.execute(query, params).fetchall()
     else:
-        # Get jobs not yet scored for THIS candidate
+        # Get jobs matching candidate domain not yet scored for THIS candidate
         query = """
             SELECT j.* FROM jobs j
             WHERE j.full_description IS NOT NULL
+              AND j.domain = ?
               AND j.url NOT IN (
                   SELECT job_url FROM candidate_scores WHERE candidate_id = ?
               )
         """
+        params = [domain, cid]
         if limit > 0:
             query += f" LIMIT {limit}"
-        jobs = conn.execute(query, (cid,)).fetchall()
+        jobs = conn.execute(query, params).fetchall()
 
     if not jobs:
         log.info("No unscored jobs with descriptions found for candidate '%s'.", cid)

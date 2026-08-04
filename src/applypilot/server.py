@@ -106,6 +106,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             cid = data.get("candidate_id", "").strip()
             name = data.get("name", "").strip()
             target_role = data.get("target_role", "Candidate").strip()
+            domain = data.get("domain", "engineering").strip()
             if not cid:
                 self._send_json({"status": "error", "error": "Missing candidate_id"}, status=400)
                 return
@@ -116,10 +117,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if profile_path.exists():
                 self._send_json({"status": "error", "error": f"Candidate '{cid}' already exists"}, status=409)
                 return
-            # Create minimal profile
+
+            # Create profile with domain
             profile = {
                 "personal": {"full_name": name or cid, "preferred_name": name or cid},
-                "experience": {"target_role": target_role},
+                "domain": domain,
+                "experience": {"target_role": target_role, "domain": domain},
                 "work_authorization": {},
                 "compensation": {},
                 "skills_boundary": {},
@@ -127,9 +130,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "availability": {},
             }
             profile_path.write_text(json.dumps(profile, indent=2), encoding="utf-8")
+
+            # Generate domain-specific searches.yaml for candidate
+            try:
+                import yaml
+                from applypilot.domains import get_engine
+                engine = get_engine(domain)
+                search_cfg = engine.get_search_config()
+                (cdir / "searches.yaml").write_text(yaml.dump(search_cfg), encoding="utf-8")
+            except Exception as e:
+                log.warning("Could not create searches.yaml for domain '%s': %s", domain, e)
+
             set_active_candidate_id(cid)
             generate_dashboard()
-            self._send_json({"status": "ok", "candidate_id": cid, "name": name or cid})
+            self._send_json({"status": "ok", "candidate_id": cid, "name": name or cid, "domain": domain})
 
         elif parsed.path == "/api/tailor":
             try:
