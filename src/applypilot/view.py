@@ -19,10 +19,157 @@ from urllib.parse import quote as url_quote
 
 from rich.console import Console
 
-from applypilot.config import APP_DIR, DB_PATH
+from applypilot.config import APP_DIR, DB_PATH, PROFILE_PATH, RESUME_PATH
 from applypilot.database import get_connection
 
 console = Console()
+
+
+def _build_profile_modal_html(profile: dict, resume_text: str) -> str:
+    """Build HTML for candidate profile modal dialog."""
+    personal = profile.get("personal", {})
+    work_auth = profile.get("work_authorization", {})
+    comp = profile.get("compensation", {})
+    exp = profile.get("experience", {})
+    skills = profile.get("skills_boundary", {})
+    eeo = profile.get("eeo_voluntary", {})
+    avail = profile.get("availability", {})
+
+    full_name = escape(personal.get("full_name") or "Candidate Profile")
+    pref_name = escape(personal.get("preferred_name") or "")
+    email = escape(personal.get("email") or "Not configured")
+    phone = escape(personal.get("phone") or "Not configured")
+    city = escape(personal.get("city") or "")
+    state = escape(personal.get("province_state") or "")
+    country = escape(personal.get("country") or "India")
+    location = ", ".join(p for p in [city, state, country] if p) or "Not specified"
+    address = escape(personal.get("address") or location)
+
+    linkedin = escape(personal.get("linkedin_url") or "")
+    github = escape(personal.get("github_url") or "")
+    portfolio = escape(personal.get("portfolio_url") or "")
+    password = personal.get("password") or ""
+
+    auth_str = "Yes" if work_auth.get("legally_authorized_to_work") else "No / Pending"
+    sponsorship = "Yes" if work_auth.get("require_sponsorship") else "No"
+    permit = escape(str(work_auth.get("work_permit_type") or "Citizen"))
+    start_date = escape(str(avail.get("earliest_start_date") or "Immediately"))
+
+    exp_sal = escape(str(comp.get("salary_expectation") or "N/A"))
+    curr = escape(str(comp.get("salary_currency") or "INR"))
+    min_sal = escape(str(comp.get("salary_range_min") or "N/A"))
+    max_sal = escape(str(comp.get("salary_range_max") or "N/A"))
+
+    yoe = escape(str(exp.get("years_of_experience_total") or "0"))
+    edu = escape(str(exp.get("education_level") or "Bachelor's"))
+    curr_title = escape(str(exp.get("current_title") or "Software Engineer / Fresher"))
+    target_role = escape(str(exp.get("target_role") or "Software Engineer"))
+
+    langs = skills.get("programming_languages") or skills.get("languages") or []
+    frameworks = skills.get("frameworks") or []
+    tools = skills.get("tools") or skills.get("databases") or []
+
+    lang_chips = "".join(f'<span class="skill-chip">{escape(str(s))}</span>' for s in langs)
+    fw_chips = "".join(f'<span class="skill-chip framework">{escape(str(s))}</span>' for s in frameworks)
+    tool_chips = "".join(f'<span class="skill-chip tool">{escape(str(s))}</span>' for s in tools)
+
+    resume_display = escape(resume_text) if resume_text else "No master resume found at ~/.applypilot/resume.txt"
+
+    return f"""
+<dialog id="profile-modal">
+  <div class="profile-modal-inner">
+    <div class="profile-modal-header">
+      <h2><span>👤</span> {full_name} <span style="font-size:0.8rem;font-weight:500;color:var(--text-muted);">({pref_name})</span></h2>
+      <button class="modal-close-btn" onclick="closeProfileModal()">✕</button>
+    </div>
+
+    <div class="profile-tabs">
+      <button class="profile-tab active" data-tab="personal" onclick="switchProfileTab('personal')">🧑 Personal & Contact</button>
+      <button class="profile-tab" data-tab="career" onclick="switchProfileTab('career')">💼 Career & Skills</button>
+      <button class="profile-tab" data-tab="resume" onclick="switchProfileTab('resume')">📄 Master Resume</button>
+      <button class="profile-tab" data-tab="security" onclick="switchProfileTab('security')">🔒 Security & EEO</button>
+    </div>
+
+    <div id="profile-tab-personal" class="profile-tab-content active">
+      <div class="profile-section-title">Contact Information</div>
+      <div class="profile-field"><span class="profile-field-label">Email:</span><span class="profile-field-value">{email}</span></div>
+      <div class="profile-field"><span class="profile-field-label">Phone:</span><span class="profile-field-value">{phone}</span></div>
+      <div class="profile-field"><span class="profile-field-label">Location:</span><span class="profile-field-value">{location}</span></div>
+      <div class="profile-field"><span class="profile-field-label">Full Address:</span><span class="profile-field-value">{address}</span></div>
+
+      <div class="profile-section-title">Social & Online Profiles</div>
+      <div class="profile-field"><span class="profile-field-label">LinkedIn:</span><span class="profile-field-value">{f'<a href="{linkedin}" target="_blank">{linkedin}</a>' if linkedin else 'Not provided'}</span></div>
+      <div class="profile-field"><span class="profile-field-label">GitHub:</span><span class="profile-field-value">{f'<a href="{github}" target="_blank">{github}</a>' if github else 'Not provided'}</span></div>
+      <div class="profile-field"><span class="profile-field-label">Portfolio:</span><span class="profile-field-value">{f'<a href="{portfolio}" target="_blank">{portfolio}</a>' if portfolio else 'Not provided'}</span></div>
+
+      <div class="profile-section-title">Work Authorization & Availability</div>
+      <div class="profile-field"><span class="profile-field-label">Authorized to Work:</span><span class="profile-field-value">{auth_str} ({permit})</span></div>
+      <div class="profile-field"><span class="profile-field-label">Sponsorship Required:</span><span class="profile-field-value">{sponsorship}</span></div>
+      <div class="profile-field"><span class="profile-field-label">Earliest Start Date:</span><span class="profile-field-value">{start_date}</span></div>
+    </div>
+
+    <div id="profile-tab-career" class="profile-tab-content">
+      <div class="profile-section-title">Career Preferences</div>
+      <div class="profile-field"><span class="profile-field-label">Target Role:</span><span class="profile-field-value" style="color:#60a5fa;font-weight:600;">{target_role}</span></div>
+      <div class="profile-field"><span class="profile-field-label">Current Title:</span><span class="profile-field-value">{curr_title}</span></div>
+      <div class="profile-field"><span class="profile-field-label">Experience:</span><span class="profile-field-value">{yoe} years</span></div>
+      <div class="profile-field"><span class="profile-field-label">Education:</span><span class="profile-field-value">{edu}</span></div>
+
+      <div class="profile-section-title">Compensation Expectations</div>
+      <div class="profile-field"><span class="profile-field-label">Target Salary:</span><span class="profile-field-value" style="color:#10b981;font-weight:600;">{exp_sal} {curr}</span></div>
+      <div class="profile-field"><span class="profile-field-label">Acceptable Range:</span><span class="profile-field-value">{min_sal} - {max_sal} {curr}</span></div>
+
+      <div class="profile-section-title">Technical Skill Boundary</div>
+      <div class="profile-field">
+        <span class="profile-field-label">Languages:</span>
+        <div class="profile-field-value"><div class="skill-chips">{lang_chips or 'None'}</div></div>
+      </div>
+      <div class="profile-field">
+        <span class="profile-field-label">Frameworks:</span>
+        <div class="profile-field-value"><div class="skill-chips">{fw_chips or 'None'}</div></div>
+      </div>
+      <div class="profile-field">
+        <span class="profile-field-label">Tools & Databases:</span>
+        <div class="profile-field-value"><div class="skill-chips">{tool_chips or 'None'}</div></div>
+      </div>
+    </div>
+
+    <div id="profile-tab-resume" class="profile-tab-content">
+      <div class="profile-section-title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Master Resume (resume.txt)</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:normal;">~/.applypilot/resume.txt</span>
+      </div>
+      <pre class="resume-viewer">{resume_display}</pre>
+    </div>
+
+    <div id="profile-tab-security" class="profile-tab-content">
+      <div class="profile-section-title">Job Portal Credentials</div>
+      <div class="profile-field">
+        <span class="profile-field-label">Stored Password:</span>
+        <div class="profile-field-value password-field">
+          <span id="profile-password-value" data-real="{escape(password)}" data-masked="true">••••••••</span>
+          <button id="profile-password-toggle" class="password-toggle" onclick="togglePasswordMask()">👁 Show</button>
+        </div>
+      </div>
+
+      <div class="profile-section-title">Voluntary EEO Declarations</div>
+      <div class="profile-field"><span class="profile-field-label">Gender:</span><span class="profile-field-value">{escape(str(eeo.get("gender") or "Decline to self-identify"))}</span></div>
+      <div class="profile-field"><span class="profile-field-label">Race / Ethnicity:</span><span class="profile-field-value">{escape(str(eeo.get("race_ethnicity") or "Decline to self-identify"))}</span></div>
+      <div class="profile-field"><span class="profile-field-label">Veteran Status:</span><span class="profile-field-value">{escape(str(eeo.get("veteran_status") or "Decline to self-identify"))}</span></div>
+      <div class="profile-field"><span class="profile-field-label">Disability Status:</span><span class="profile-field-value">{escape(str(eeo.get("disability_status") or "Decline to self-identify"))}</span></div>
+
+      <div class="privacy-notice">
+        <span>🔒</span>
+        <div>
+          <strong>Local Privacy Guarantee</strong><br>
+          All candidate information is stored strictly on your local device at <code>~/.applypilot/profile.json</code>.
+          ApplyPilot never sends your personal credentials to external servers except when auto-filling forms directly on job portals during application submission.
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>
+"""
 
 
 def generate_dashboard(output_path: str | None = None) -> str:
@@ -37,6 +184,22 @@ def generate_dashboard(output_path: str | None = None) -> str:
     out = Path(output_path) if output_path else APP_DIR / "dashboard.html"
 
     conn = get_connection()
+
+    # Load candidate profile & resume for Profile modal
+    import json as _json
+    profile_data: dict = {}
+    try:
+        if PROFILE_PATH.exists():
+            profile_data = _json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
+    resume_raw_text = ""
+    try:
+        if RESUME_PATH.exists():
+            resume_raw_text = RESUME_PATH.read_text(encoding="utf-8")
+    except Exception:
+        pass
 
     # Stats
     total = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
@@ -993,12 +1156,226 @@ def generate_dashboard(output_path: str | None = None) -> str:
     margin-bottom: 1.25rem;
   }}
 
+  /* ── Profile Button & Modal ─────────────────────────────── */
+  .nav-right {{
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }}
+  .profile-nav-btn {{
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 1rem;
+    background: rgba(139, 92, 246, 0.12);
+    border: 1px solid rgba(139, 92, 246, 0.35);
+    color: #c4b5fd;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-family: var(--font-body);
+  }}
+  .profile-nav-btn:hover {{
+    background: rgba(139, 92, 246, 0.25);
+    border-color: rgba(139, 92, 246, 0.6);
+    color: #fff;
+    transform: translateY(-1px);
+  }}
+  .avatar-circle {{
+    font-size: 1.1rem;
+  }}
+
+  dialog#profile-modal {{
+    position: fixed;
+    max-width: 700px;
+    width: 90vw;
+    max-height: 85vh;
+    background: rgba(15, 20, 35, 0.95);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    border-radius: 20px;
+    color: var(--text-main);
+    padding: 0;
+    overflow: hidden;
+  }}
+  dialog#profile-modal::backdrop {{
+    background-color: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+  }}
+  .profile-modal-inner {{
+    display: flex;
+    flex-direction: column;
+    max-height: 85vh;
+  }}
+  .profile-modal-header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }}
+  .profile-modal-header h2 {{
+    font-family: var(--font-heading);
+    font-size: 1.25rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }}
+  .profile-tabs {{
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0 1.5rem;
+    overflow-x: auto;
+  }}
+  .profile-tab {{
+    padding: 0.7rem 1.1rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    font-family: var(--font-body);
+  }}
+  .profile-tab:hover {{ color: #c4b5fd; }}
+  .profile-tab.active {{
+    color: #a78bfa;
+    border-bottom-color: #8b5cf6;
+  }}
+  .profile-tab-content {{
+    display: none;
+    padding: 1.5rem;
+    overflow-y: auto;
+    max-height: calc(85vh - 140px);
+  }}
+  .profile-tab-content.active {{ display: block; }}
+
+  .profile-section-title {{
+    font-family: var(--font-heading);
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 1.25rem 0 0.6rem 0;
+  }}
+  .profile-section-title:first-child {{ margin-top: 0; }}
+
+  .profile-field {{
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.4rem 0;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }}
+  .profile-field-label {{
+    color: var(--text-muted);
+    min-width: 140px;
+    flex-shrink: 0;
+    font-weight: 500;
+  }}
+  .profile-field-value {{
+    color: var(--text-main);
+    word-break: break-word;
+  }}
+  .profile-field-value a {{
+    color: #60a5fa;
+    text-decoration: none;
+  }}
+  .profile-field-value a:hover {{ text-decoration: underline; }}
+
+  .skill-chips {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.25rem;
+  }}
+  .skill-chip {{
+    display: inline-block;
+    padding: 0.25rem 0.65rem;
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #93c5fd;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 500;
+  }}
+  .skill-chip.framework {{
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.3);
+    color: #6ee7b7;
+  }}
+  .skill-chip.tool {{
+    background: rgba(245, 158, 11, 0.12);
+    border-color: rgba(245, 158, 11, 0.3);
+    color: #fcd34d;
+  }}
+
+  .resume-viewer {{
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 1.25rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    color: #cbd5e1;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 50vh;
+    overflow-y: auto;
+  }}
+
+  .password-field {{
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }}
+  .password-toggle {{
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--text-muted);
+    padding: 0.2rem 0.5rem;
+    border-radius: 5px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }}
+  .password-toggle:hover {{ background: rgba(255, 255, 255, 0.15); color: #fff; }}
+
+  .privacy-notice {{
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    font-size: 0.8rem;
+    color: #6ee7b7;
+    margin-top: 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }}
+
   @media (max-width: 1024px) {{
     .summary-grid {{ grid-template-columns: repeat(2, 1fr); }}
     .analytics-section {{ grid-template-columns: 1fr; }}
     .job-grid {{ grid-template-columns: 1fr; }}
     .navbar {{ padding: 1rem; flex-direction: column; align-items: stretch; }}
+    .nav-right {{ flex-wrap: wrap; }}
     .container {{ padding: 1rem; }}
+    .profile-field {{ flex-direction: column; gap: 0.2rem; }}
+    .profile-field-label {{ min-width: unset; }}
   }}
 </style>
 </head>
@@ -1014,9 +1391,14 @@ def generate_dashboard(output_path: str | None = None) -> str:
     </div>
   </div>
 
-  <div class="search-wrapper">
-    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input type="text" id="main-search" class="search-input" placeholder="Search titles, skills, locations... (/)" oninput="filterText(this.value)">
+  <div class="nav-right">
+    <button class="profile-nav-btn" onclick="openProfileModal()" title="View Candidate Profile">
+      <span class="avatar-circle">👤</span> Profile
+    </button>
+    <div class="search-wrapper">
+      <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="main-search" class="search-input" placeholder="Search titles, skills, locations... (/)" oninput="filterText(this.value)">
+    </div>
   </div>
 </div>
 
@@ -1333,7 +1715,43 @@ function applyFilters() {{
 }}
 
 applyFilters();
+// ── Profile Modal ──────────────────────────────────────────
+function openProfileModal() {{
+  const modal = document.getElementById('profile-modal');
+  if (modal) modal.showModal();
+}}
+function closeProfileModal() {{
+  const modal = document.getElementById('profile-modal');
+  if (modal) modal.close();
+}}
+function switchProfileTab(tabName) {{
+  document.querySelectorAll('.profile-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.profile-tab-content').forEach(c => c.classList.remove('active'));
+  document.querySelector(`.profile-tab[data-tab="${{tabName}}"]`)?.classList.add('active');
+  document.getElementById(`profile-tab-${{tabName}}`)?.classList.add('active');
+}}
+function togglePasswordMask() {{
+  const el = document.getElementById('profile-password-value');
+  const btn = document.getElementById('profile-password-toggle');
+  if (!el || !btn) return;
+  if (el.dataset.masked === 'true') {{
+    el.textContent = el.dataset.real;
+    el.dataset.masked = 'false';
+    btn.textContent = '🙈 Hide';
+  }} else {{
+    el.textContent = '••••••••';
+    el.dataset.masked = 'true';
+    btn.textContent = '👁 Show';
+  }}
+}}
+// Close profile modal on backdrop click
+document.getElementById('profile-modal')?.addEventListener('click', (e) => {{
+  const r = e.target.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) closeProfileModal();
+}});
 </script>
+
+{_build_profile_modal_html(profile_data, resume_raw_text)}
 
 </body>
 </html>"""
