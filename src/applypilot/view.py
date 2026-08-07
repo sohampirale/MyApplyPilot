@@ -337,8 +337,10 @@ def generate_dashboard(output_path: str | None = None,
         "WHERE cs.candidate_id = ? AND cs.fit_score >= 7 AND j.domain = ?", (cid, domain)
     ).fetchone()[0]
 
+    unscored_count = max(0, total - scored)
+
     # Score distribution for this candidate (domain filtered)
-    score_dist: dict[int, int] = {}
+    score_dist: dict[int, int] = {0: unscored_count}
     if scored:
         rows = conn.execute(
             "SELECT cs.fit_score, COUNT(*) FROM candidate_scores cs "
@@ -356,23 +358,24 @@ def generate_dashboard(output_path: str | None = None,
                SUM(CASE WHEN cs.fit_score >= 7 THEN 1 ELSE 0 END) as high_fit,
                SUM(CASE WHEN cs.fit_score BETWEEN 5 AND 6 THEN 1 ELSE 0 END) as mid_fit,
                SUM(CASE WHEN cs.fit_score < 5 THEN 1 ELSE 0 END) as low_fit,
-               0 as unscored,
+               SUM(CASE WHEN cs.fit_score IS NULL THEN 1 ELSE 0 END) as unscored,
                ROUND(AVG(cs.fit_score), 1) as avg_score
-        FROM candidate_scores cs
-        JOIN jobs j ON j.url = cs.job_url
-        WHERE cs.candidate_id = ? AND j.domain = ?
+        FROM jobs j
+        LEFT JOIN candidate_scores cs ON cs.job_url = j.url AND cs.candidate_id = ?
+        WHERE j.domain = ?
         GROUP BY j.site ORDER BY high_fit DESC, total DESC
     """, (cid, domain)).fetchall()
 
-    # All scored jobs for this candidate (1+) in their domain, ordered by score desc
+    # All jobs in candidate domain (both scored and newly discovered/unscored)
     jobs = conn.execute("""
         SELECT j.url, j.title, j.salary, j.description, j.location, j.site, j.strategy,
                j.full_description, j.application_url, j.detail_error,
-               cs.fit_score, cs.score_reasoning, cs.tailored_resume_path
-        FROM candidate_scores cs
-        JOIN jobs j ON j.url = cs.job_url
-        WHERE cs.candidate_id = ? AND cs.fit_score >= 1 AND j.domain = ?
-        ORDER BY cs.fit_score DESC, j.site, j.title
+               COALESCE(cs.fit_score, 0) as fit_score,
+               cs.score_reasoning, cs.tailored_resume_path
+        FROM jobs j
+        LEFT JOIN candidate_scores cs ON cs.job_url = j.url AND cs.candidate_id = ?
+        WHERE j.domain = ?
+        ORDER BY fit_score DESC, j.discovered_at DESC, j.title
     """, (cid, domain)).fetchall()
 
     # Color map per site
@@ -436,17 +439,19 @@ def generate_dashboard(output_path: str | None = None,
         if score != current_score:
             if current_score is not None:
                 job_sections += "</div>"
-            score_color = "#10b981" if score >= 7 else ("#f59e0b" if score >= 5 else "#ef4444")
+            score_color = "#10b981" if score >= 7 else ("#f59e0b" if score >= 5 else ("#ef4444" if score >= 1 else "#64748b"))
             score_label = {
                 10: "Perfect Match", 9: "Excellent Fit", 8: "Strong Fit",
                 7: "Good Fit", 6: "Moderate+", 5: "Moderate",
                 4: "Low-Moderate", 3: "Low Fit", 2: "Weak Match", 1: "Poor Fit",
+                0: "Newly Discovered Jobs (Raw Pool)",
             }.get(score, f"Score {score}")
+            score_badge_display = "🆕" if score == 0 else str(score)
             count_at_score = score_dist.get(score, 0)
             job_sections += f"""
             <div class="score-section-wrapper" data-score-header="{score}">
               <h2 class="score-header" style="border-color:{score_color}">
-                <span class="score-badge" style="background:{score_color}">{score}</span>
+                <span class="score-badge" style="background:{score_color}">{score_badge_display}</span>
                 <span class="score-title-text">{score_label}</span>
                 <span class="score-count-pill">{count_at_score} jobs</span>
               </h2>
@@ -485,7 +490,9 @@ def generate_dashboard(output_path: str | None = None,
         meta_parts.append(
             f'<span class="meta-tag site-tag" style="background:{site_color}18;color:{site_color};border:1px solid {site_color}44">{site}</span>'
         )
-        if has_resume:
+        if score == 0:
+            meta_parts.append('<span class="meta-tag" style="background:rgba(100,116,139,0.18);color:#94a3b8;border:1px solid rgba(100,116,139,0.35)">⚡ Newly Discovered (Raw)</span>')
+        elif has_resume:
             meta_parts.append('<span class="meta-tag resume-ready">📄 AI Resume Ready</span>')
         else:
             meta_parts.append('<span class="meta-tag resume-auto">⚡ Auto-Creates AI Resume</span>')
@@ -513,7 +520,7 @@ def generate_dashboard(output_path: str | None = None,
         job_sections += f"""
         <div class="job-card" id="{card_id}" data-score="{score}" data-site="{escape(j['site'] or '')}" data-location="{location.lower()}">
           <div class="card-header">
-            <span class="score-pill score-{score}">{score}</span>
+            <span class="score-pill score-{score}" {"style='background:#475569'" if score == 0 else ""}>{"Raw" if score == 0 else score}</span>
             <a href="{url}" class="job-title" target="_blank" title="{title}">{title}</a>
           </div>
           <div class="meta-row">{meta_html}</div>
@@ -1711,10 +1718,14 @@ def generate_dashboard(output_path: str | None = None,
 <div class="container">
 
   <!-- Summary Stats -->
-  <div class="summary-grid">
+  <div class="summary-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
     <div class="stat-card stat-total">
       <div class="stat-top"><span class="stat-label">Total Jobs Discovered</span><span class="stat-icon">📊</span></div>
       <div class="stat-num">{total}</div>
+    </div>
+    <div class="stat-card stat-unscored" style="border-left: 4px solid #64748b;">
+      <div class="stat-top"><span class="stat-label">Newly Discovered (Raw)</span><span class="stat-icon">🆕</span></div>
+      <div class="stat-num" style="color: #94a3b8;">{unscored_count}</div>
     </div>
     <div class="stat-card stat-ready">
       <div class="stat-top"><span class="stat-label">Ready (Desc + URL)</span><span class="stat-icon">⚡</span></div>
@@ -1733,8 +1744,10 @@ def generate_dashboard(output_path: str | None = None,
   <!-- Filter Toolbar -->
   <div class="toolbar">
     <div class="filter-group">
-      <span class="filter-label">Fit Score:</span>
-      <button class="filter-btn active" onclick="filterScore(0)">All Scored</button>
+      <span class="filter-label">View Pool:</span>
+      <button class="filter-btn active" onclick="filterScore(-2)">All Jobs ({total})</button>
+      <button class="filter-btn" onclick="filterScore(-1)">🆕 Newly Discovered ({unscored_count})</button>
+      <button class="filter-btn" onclick="filterScore(0)">All Scored ({scored})</button>
       <button class="filter-btn" onclick="filterScore(5)">5+ Moderate</button>
       <button class="filter-btn" onclick="filterScore(7)">7+ Strong</button>
       <button class="filter-btn" onclick="filterScore(8)">8+ Excellent</button>
@@ -1805,7 +1818,7 @@ def generate_dashboard(output_path: str | None = None,
 </style>
 
 <script>
-let minScore = 0;
+let minScore = -2;
 let selectedSite = '';
 let searchText = '';
 const expandedGrids = new Set();
@@ -2000,14 +2013,26 @@ function applyFilters() {{
     const cards = Array.from(grid.querySelectorAll('.job-card'));
     let gridMatching = 0;
 
-    const limit = score >= 7 ? 6 : (score >= 5 ? 4 : 2);
+    const limit = score >= 7 ? 6 : (score >= 5 ? 4 : (score === 0 ? 8 : 2));
     cards.forEach(card => {{
       total++;
       const cardScore = parseInt(card.dataset.score) || 0;
       const cardSite = card.dataset.site || '';
       const text = card.textContent.toLowerCase();
 
-      const scoreMatch = minScore === 0 ? true : (minScore >= 5 ? cardScore >= minScore : cardScore === minScore);
+      let scoreMatch = true;
+      if (minScore === -2) {{
+        scoreMatch = true;
+      }} else if (minScore === -1) {{
+        scoreMatch = (cardScore === 0);
+      }} else if (minScore === 0) {{
+        scoreMatch = (cardScore >= 1);
+      }} else if (minScore >= 5) {{
+        scoreMatch = (cardScore >= minScore);
+      }} else {{
+        scoreMatch = (cardScore === minScore);
+      }}
+
       const siteMatch = !selectedSite || cardSite === selectedSite;
       const textMatch = !searchText || text.includes(searchText);
 
@@ -2049,7 +2074,7 @@ function applyFilters() {{
     }}
   }});
 
-  document.getElementById('job-count').textContent = `Showing ${{shown}} of ${{total}} scored jobs`;
+  document.getElementById('job-count').textContent = `Showing ${{shown}} of ${{total}} jobs`;
 }}
 
 applyFilters();
