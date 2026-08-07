@@ -361,3 +361,38 @@ employers:
     site_id: "GSK"
     base_url: "https://gsk.wd3.myworkdayjobs.com"
     domain: "pharmacy"
+
+  iqvia:
+    name: "IQVIA"
+    tenant: "iqvia"
+    site_id: "IQVIA"
+    base_url: "https://iqvia.wd1.myworkdayjobs.com"
+    domain: "pharmacy"
+
+  takeda:
+    name: "Takeda Pharmaceutical"
+    tenant: "takeda"
+    site_id: "External"
+    base_url: "https://takeda.wd3.myworkdayjobs.com"
+    domain: "pharmacy"
+
+  parexel:
+    name: "Parexel"
+    tenant: "parexel"
+    site_id: "External"
+    base_url: "https://parexel.wd3.myworkdayjobs.com"
+    domain: "pharmacy"
+
+  lonza:
+    name: "Lonza"
+    tenant: "lonza"
+    site_id: "Lonza_Careers"
+    base_url: "https://lonza.wd3.myworkdayjobs.com"
+    domain: "pharmacy"
+
+  medtronic:
+    name: "Medtronic"
+    tenant: "medtronic"
+    site_id: "MedtronicCareers"
+    base_url: "https://medtronic.wd1.myworkdayjobs.com"
+    domain: "pharmacy"
