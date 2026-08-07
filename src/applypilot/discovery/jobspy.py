@@ -420,14 +420,13 @@ def _full_crawl(
     queries = search_cfg.get("queries", [])
     locs = search_cfg.get("locations", [])
 
-    # If domain is pharmacy and search_cfg has no queries/locations, load from PharmacyEngine
-    if domain_id == "pharmacy" and (not queries or not locs):
+    # If domain is pharmacy and queries are missing or contain software terms, load from PharmacyEngine
+    has_software_queries = any("software" in q.get("query", "").lower() or "developer" in q.get("query", "").lower() for q in queries)
+    if domain_id == "pharmacy" and (not queries or not locs or has_software_queries):
         engine = get_engine("pharmacy")
         engine_cfg = engine.get_search_config()
-        if not queries:
-            queries = engine_cfg["queries"]
-        if not locs:
-            locs = engine_cfg["locations"]
+        queries = engine_cfg["queries"]
+        locs = engine_cfg["locations"]
 
     defaults = search_cfg.get("defaults", {})
     glassdoor_map = search_cfg.get("glassdoor_location_map", {})

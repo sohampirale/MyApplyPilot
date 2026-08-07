@@ -514,15 +514,22 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
     from applypilot.domains import get_domain_for_candidate, get_engine
     domain_id = search_cfg.get("domain") or get_domain_for_candidate()
 
+    # Filter employers by active candidate domain if specified
+    if domain_id != "all":
+        domain_employers = {
+            k: v for k, v in employers.items()
+            if v.get("domain") == domain_id
+        }
+        if domain_employers:
+            employers = domain_employers
+
     # Default to tier 1-2 queries for workday scraping
     max_tier = search_cfg.get("workday_max_tier", 2)
     queries = [q["query"] for q in queries_cfg if q.get("tier", 99) <= max_tier]
 
-    if not queries:
-        # Fallback: use all queries
-        queries = [q["query"] for q in queries_cfg]
+    has_software_queries = any("software" in q.lower() or "developer" in q.lower() for q in queries)
 
-    if domain_id == "pharmacy" and not queries:
+    if domain_id == "pharmacy" and (not queries or has_software_queries):
         engine = get_engine("pharmacy")
         domain_cfg = engine.get_search_config()
         queries = [q["query"] for q in domain_cfg["queries"]]
