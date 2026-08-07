@@ -18,9 +18,25 @@ class PharmacyEngine(BaseDomainEngine):
     emoji = '💊'
 
     default_search_terms = [
-        'Pharmacist', 'Quality Assurance Executive', 'QC Analyst',
-        'Regulatory Affairs', 'Clinical Research Associate',
-        'Formulation Scientist', 'Drug Safety Associate', 'Medical Representative',
+        # Tier 1: Core Quality, Production & Dispensing (High Volume)
+        'Pharmacist', 'Junior Pharmacist', 'Hospital Pharmacist', 'Clinical Pharmacist', 'Retail Pharmacist',
+        'Quality Control Officer', 'QC Analyst', 'QC Executive', 'QC Chemist',
+        'Quality Assurance Officer', 'QA Executive', 'QA Chemist', 'IPQA Officer',
+        'Production Executive', 'Production Officer', 'Manufacturing Officer',
+        'Regulatory Affairs Executive', 'Regulatory Affairs Officer', 'RA Officer',
+        'Clinical Research Associate', 'CRA', 'Clinical Trial Assistant',
+        # Tier 2: R&D, Clinical & Scientific Roles (M.Pharm / Pharm.D / Ph.D)
+        'Formulation Development Scientist', 'F&D Executive', 'F&D Scientist',
+        'Analytical Method Development', 'ADL Scientist', 'ADL Executive',
+        'Pharmacovigilance Associate', 'PV Officer', 'Drug Safety Associate', 'Drug Safety Physician',
+        'Clinical Data Manager', 'CDM Associate',
+        'Medical Writer', 'Scientific Writer', 'Medical Information Specialist',
+        'Regulatory Documentation Specialist', 'eCTD Specialist', 'DMF Writer',
+        # Tier 3: Sales, Marketing, Trainee & Allied Roles (D.Pharm / B.Pharm / Fresher)
+        'Medical Representative', 'MR', 'Pharma Sales Executive', 'Territory Manager Pharma',
+        'Product Executive', 'Product Manager Pharma',
+        'Pharma Trainee', 'Pharmacy Apprentice', 'Graduate Trainee Pharma',
+        'Medical Coder', 'Pharma Data Analyst',
     ]
 
     default_locations = [
