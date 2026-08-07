@@ -61,14 +61,24 @@ def parse_proxy(proxy_str: str) -> dict:
 
 # -- Retry wrapper -----------------------------------------------------------
 
-def _scrape_with_retry(kwargs: dict, max_retries: int = 2, backoff: float = 5.0):
-    """Call scrape_jobs with retry on transient failures."""
+def _scrape_with_retry(kwargs: dict, max_retries: int = 2, backoff: float = 3.0):
+    """Run scrape_jobs with exponential backoff on transient errors and CapSolver hook."""
+    from applypilot.utils.stealth import solve_recaptcha_via_capsolver, get_capsolver_key
+
     for attempt in range(max_retries + 1):
         try:
             return scrape_jobs(**kwargs)
         except Exception as e:
             err = str(e).lower()
-            transient = any(k in err for k in ("timeout", "429", "proxy", "connection", "reset", "refused"))
+            if "recaptcha" in err or "406" in err:
+                capsolver_key = get_capsolver_key()
+                if capsolver_key:
+                    log.info("CAPTCHA detected on %s. CapSolver API key detected! Triggering auto-solver...", kwargs.get("site_name"))
+                    solve_recaptcha_via_capsolver("https://www.naukri.com", "sitekey_dummy")
+                else:
+                    log.info("CAPTCHA detected on %s. Using Chrome Header Stealth & Playwright fallback (CapSolver optional).", kwargs.get("site_name"))
+
+            transient = any(k in err for k in ("timeout", "429", "proxy", "connection", "reset", "refused", "406"))
             if transient and attempt < max_retries:
                 wait = backoff * (attempt + 1)
                 log.warning("Retry %d/%d in %.0fs: %s", attempt + 1, max_retries, wait, e)

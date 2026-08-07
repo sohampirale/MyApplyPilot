@@ -171,9 +171,19 @@ def collect_page_intelligence(url: str, headless: bool = True) -> dict:
             except Exception:
                 pass
 
+    from applypilot.utils.stealth import CHROME_STEALTH_HEADERS, apply_playwright_stealth
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
-        page = browser.new_page(user_agent=UA)
+        page = browser.new_page(
+            user_agent=CHROME_STEALTH_HEADERS["User-Agent"],
+            extra_http_headers={
+                "Accept-Language": CHROME_STEALTH_HEADERS["Accept-Language"],
+                "Sec-Ch-Ua": CHROME_STEALTH_HEADERS["Sec-Ch-Ua"],
+                "Sec-Ch-Ua-Platform": CHROME_STEALTH_HEADERS["Sec-Ch-Ua-Platform"],
+            }
+        )
+        apply_playwright_stealth(page)
         page.on("response", on_response)
 
         page.goto(url, timeout=60000)
