@@ -97,8 +97,10 @@ def _store_jobs_filtered(
     strategy: str,
     accept_locs: list[str],
     reject_locs: list[str],
+    domain: str = "engineering",
 ) -> tuple[int, int]:
     """Store jobs with location filtering. Returns (new, existing)."""
+    from applypilot.database import parse_location
     now = datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
@@ -111,12 +113,15 @@ def _store_jobs_filtered(
         if not _location_ok(job.get("location"), accept_locs, reject_locs):
             filtered += 1
             continue
+        loc_raw = job.get("location")
+        city, state, country = parse_location(loc_raw)
+        company = job.get("company")
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, domain, company, city, state, country) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, job.get("title"), job.get("salary"), job.get("description"),
-                 job.get("location"), site, strategy, now),
+                 loc_raw, site, strategy, now, domain, company, city, state, country),
             )
             new += 1
         except sqlite3.IntegrityError:
@@ -989,14 +994,30 @@ def build_scrape_targets(
     if search_cfg is None:
         search_cfg = config.load_search_config()
 
+    from applypilot.domains import get_domain_for_candidate, get_engine
+    domain_id = search_cfg.get("domain") or get_domain_for_candidate()
+
     queries_cfg = search_cfg.get("queries", [])
     queries = [q["query"] for q in queries_cfg]
     locs = search_cfg.get("locations", [])
-    default_location = locs[0]["location"] if locs else ""
+
+    if domain_id == "pharmacy" and (not queries or not locs):
+        engine = get_engine("pharmacy")
+        engine_cfg = engine.get_search_config()
+        if not queries:
+            queries = [q["query"] for q in engine_cfg["queries"]]
+        if not locs:
+            locs = [l["location"] for l in engine_cfg["locations"]]
+
+    default_location = locs[0] if locs and isinstance(locs[0], str) else (locs[0]["location"] if locs else "India")
 
     targets: list[dict] = []
 
     for site in sites:
+        site_domain = site.get("domain")
+        if site_domain and site_domain not in ("all", domain_id):
+            continue
+
         site_url = site.get("url", "")
         site_name = site.get("name", "Unknown")
         site_type = site.get("type", "static")
@@ -1011,6 +1032,7 @@ def build_scrape_targets(
                     "name": site_name,
                     "url": expanded_url,
                     "query": query,
+                    "domain": domain_id,
                 })
         else:
             expanded_url = site_url
@@ -1019,6 +1041,7 @@ def build_scrape_targets(
                 "name": site_name,
                 "url": expanded_url,
                 "query": None,
+                "domain": domain_id,
             })
 
     return targets
@@ -1052,7 +1075,8 @@ def _run_all(
         if jobs:
             new, existing = _store_jobs_filtered(conn, jobs, target["name"],
                                                   r.get("strategy", "?"),
-                                                  accept_locs, reject_locs)
+                                                  accept_locs, reject_locs,
+                                                  domain=target.get("domain", "engineering"))
             total_new += new
             total_existing += existing
             log.info("DB: +%d new, %d already existed", new, existing)

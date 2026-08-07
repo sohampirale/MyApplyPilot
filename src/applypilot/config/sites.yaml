@@ -59,61 +59,68 @@ base_urls:
   "Arc.dev": "https://arc.dev"
   "Himalayas": "https://himalayas.app"
   "Techstars Jobs": "https://www.techstars.com"
-  "Randstad Canada": "https://www.randstad.ca/jobs/search/"
-
 sites:
-  # ── Indian Tech & Fresher Search Portals (Playwright SmartExtract) ───
+  # ── Indian Pharmacy & Lifesciences Specialized Channels ───────────────
+  - name: "Pharmatutor Jobs"
+    url: "https://www.pharmatutor.org/jobs"
+    domain: "pharmacy"
+    type: static
+
+  - name: "Naukri Pharmacy"
+    url: "https://www.naukri.com/pharma-jobs-{query_encoded}-in-{location_encoded}"
+    domain: "pharmacy"
+    type: search
+
+  - name: "Unstop Pharmacy"
+    url: "https://unstop.com/jobs?searchTerm={query_encoded}"
+    domain: "pharmacy"
+    type: search
+
+  # ── Indian Search Portals & Aggregators ───────────────────────────────
   - name: "Naukri India"
     url: "https://www.naukri.com/{query_encoded}-jobs-in-{location_encoded}"
+    domain: "all"
     type: search
 
   - name: "Instahyre"
     url: "https://www.instahyre.com/search-jobs/?query={query_encoded}&location={location_encoded}"
+    domain: "all"
     type: search
 
   - name: "Unstop Jobs"
     url: "https://unstop.com/jobs?searchTerm={query_encoded}"
-    type: search
-
-  - name: "Hirist"
-    url: "https://www.hirist.tech/search/{query_encoded}-0-0-0.html"
-    type: search
-
-  - name: "Cutshort"
-    url: "https://cutshort.io/jobs/{query_encoded}-jobs-in-{location_encoded}"
+    domain: "all"
     type: search
 
   - name: "Foundit India"
     url: "https://www.foundit.in/srp/results?query={query_encoded}&locations={location_encoded}"
+    domain: "all"
+    type: search
+
+  - name: "Internshala Freshers"
+    url: "https://internshala.com/fresher-jobs/keywords-{query_encoded}/"
+    domain: "all"
+    type: search
+
+  # ── Software & Tech Specific Portals ─────────────────────────────────
+  - name: "Hirist"
+    url: "https://www.hirist.tech/search/{query_encoded}-0-0-0.html"
+    domain: "engineering"
+    type: search
+
+  - name: "Cutshort"
+    url: "https://cutshort.io/jobs/{query_encoded}-jobs-in-{location_encoded}"
+    domain: "engineering"
     type: search
 
   - name: "Wellfound India"
     url: "https://wellfound.com/role/l/software-engineer/india"
+    domain: "engineering"
     type: static
 
-  - name: "Internshala Freshers"
-    url: "https://internshala.com/fresher-jobs/keywords-{query_encoded}/"
-    type: search
-
-  - name: "Talent.com"
-    url: "https://www.talent.com/jobs?k={query_encoded}&l={location_encoded}"
-    type: search
-
-  - name: "Randstad Canada"
-    url: "https://www.randstad.ca/jobs/?keywords={query_encoded}&location={location_encoded}"
-    type: search
-
-  - name: "CareerJet Canada"
-    url: "https://www.careerjet.ca/search/jobs?s={query_encoded}&l={location_encoded}"
-    type: search
-
-  - name: "Job Bank Canada"
-    url: "https://www.jobbank.gc.ca/jobsearch/jobsearch?searchstring={query_encoded}&locationstring={location_encoded}&fage=2&sort=D"
-    type: search
-
-  # General tech (with search)
   - name: "Dice"
     url: "https://www.dice.com/jobs?q={query_encoded}&location=Remote&pageSize=100"
+    domain: "engineering"
     type: search
 
   - name: "SimplyHired"
