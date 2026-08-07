@@ -494,9 +494,9 @@ def _full_crawl(
                 else:
                     board_stats[site]["blocked"] += 1
 
-        if completed % 5 == 0 or completed == len(searches):
-            log.info("Progress: %d/%d queries done (%d new, %d dupes, %d errors)",
-                     completed, len(searches), total_new, total_existing, total_errors)
+        if completed % 1 == 0 or completed == len(searches):
+            log.info("[%d/%d] Queries Done | +%d New | %d Dupes | Search: \"%s\" in %s",
+                     completed, len(searches), total_new, total_existing, s["query"], s["location"])
 
     # Final stats
     conn = get_connection()
