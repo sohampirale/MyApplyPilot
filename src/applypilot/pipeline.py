@@ -67,7 +67,7 @@ def _run_discover(workers: int = 1) -> dict:
     console.print("  [cyan]JobSpy full crawl...[/cyan]")
     try:
         from applypilot.discovery.jobspy import run_discovery
-        run_discovery()
+        run_discovery(workers=workers)
         stats["jobspy"] = "ok"
     except Exception as e:
         log.error("JobSpy crawl failed: %s", e)

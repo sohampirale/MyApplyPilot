@@ -417,10 +417,16 @@ def _full_crawl(
     hours_old: int = 72,
     proxy: str | None = None,
     max_retries: int = 2,
+    workers: int = 1,
 ) -> dict:
-    """Run all search queries from search config across all locations."""
+    """Run all search queries from search config across all locations in parallel or sequential mode."""
     if sites is None:
-        sites = search_cfg.get("boards") or search_cfg.get("sites") or ["naukri", "linkedin", "indeed", "glassdoor"]
+        sites = search_cfg.get("boards") or search_cfg.get("sites") or ["linkedin", "indeed", "glassdoor"]
+
+    # Filter out naukri from direct JobSpy HTTP calls if it triggers 406 (SmartExtract handles Naukri via Playwright)
+    sites = [s for s in sites if s.lower() != "naukri"]
+    if not sites:
+        sites = ["linkedin", "indeed", "glassdoor"]
 
     # Determine active domain
     from applypilot.domains import get_domain_for_candidate, get_engine
@@ -459,7 +465,7 @@ def _full_crawl(
 
     proxy_config = parse_proxy(proxy) if proxy else None
 
-    log.info("Full crawl: %d search combinations (Domain: %s)", len(searches), domain_id)
+    log.info("Full crawl: %d search combinations (Domain: %s, workers=%d)", len(searches), domain_id, workers)
     log.info("Sites: %s | Results/site: %d | Hours old: %d",
              ", ".join(sites), results_per_site, hours_old)
 
@@ -474,27 +480,42 @@ def _full_crawl(
     total_errors = 0
     completed = 0
 
-    for s in searches:
-        result = _run_one_search(
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def _execute(s: dict) -> dict:
+        return _run_one_search(
             s, sites, results_per_site, hours_old,
             proxy_config, defaults, max_retries,
             accept_locs, reject_locs, glassdoor_map,
             domain=domain_id,
         )
-        completed += 1
-        total_new += result.get("new", 0)
-        total_existing += result.get("existing", 0)
-        total_errors += result.get("errors", 0)
-        
-        br = result.get("board_results", {})
-        for site, status in br.items():
-            if site in board_stats:
-                if status == "OK":
-                    board_stats[site]["success"] += 1
-                else:
-                    board_stats[site]["blocked"] += 1
 
-        if completed % 1 == 0 or completed == len(searches):
+    if workers > 1 and len(searches) > 1:
+        max_w = min(workers, 10)
+        with ThreadPoolExecutor(max_workers=max_w) as executor:
+            future_to_search = {executor.submit(_execute, s): s for s in searches}
+            for future in as_completed(future_to_search):
+                s = future_to_search[future]
+                completed += 1
+                try:
+                    result = future.result()
+                    total_new += result.get("new", 0)
+                    total_existing += result.get("existing", 0)
+                    total_errors += result.get("errors", 0)
+                except Exception as e:
+                    total_errors += 1
+                    log.warning("Search failed [%s]: %s", s["query"], e)
+                
+                log.info("[%d/%d] Queries Done | +%d New | %d Dupes | Search: \"%s\" in %s",
+                         completed, len(searches), total_new, total_existing, s["query"], s["location"])
+    else:
+        for s in searches:
+            result = _execute(s)
+            completed += 1
+            total_new += result.get("new", 0)
+            total_existing += result.get("existing", 0)
+            total_errors += result.get("errors", 0)
+
             log.info("[%d/%d] Queries Done | +%d New | %d Dupes | Search: \"%s\" in %s",
                      completed, len(searches), total_new, total_existing, s["query"], s["location"])
 
@@ -528,19 +549,8 @@ def _full_crawl(
 
 # -- Public entry point ------------------------------------------------------
 
-def run_discovery(cfg: dict | None = None) -> dict:
-    """Main entry point for JobSpy-based job discovery.
-
-    Loads search queries and locations from the user's search config YAML,
-    then runs a full crawl across all configured job boards.
-
-    Args:
-        cfg: Override the search configuration dict. If None, loads from
-             the user's searches.yaml file.
-
-    Returns:
-        Dict with stats: new, existing, errors, db_total, queries.
-    """
+def run_discovery(cfg: dict | None = None, workers: int = 1) -> dict:
+    """Main entry point for JobSpy-based job discovery."""
     if cfg is None:
         cfg = config.load_search_config()
 
@@ -563,4 +573,5 @@ def run_discovery(cfg: dict | None = None) -> dict:
         results_per_site=results_per_site,
         hours_old=hours_old,
         proxy=proxy,
+        workers=workers,
     )
