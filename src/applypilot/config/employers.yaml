@@ -303,3 +303,61 @@ employers:
     tenant: "canadiansolar"
     site_id: "CanadianSolar"
     base_url: "https://canadiansolar.wd5.myworkdayjobs.com"
+
+  # ── Pharmaceutical & Lifesciences Corporate Workday Registry ───────────────
+
+  novartis:
+    name: "Novartis"
+    tenant: "novartis"
+    site_id: "Novartis_External"
+    base_url: "https://novartis.wd3.myworkdayjobs.com"
+    domain: "pharmacy"
+
+  pfizer:
+    name: "Pfizer"
+    tenant: "pfizer"
+    site_id: "Pfizer_Careers"
+    base_url: "https://pfizer.wd1.myworkdayjobs.com"
+    domain: "pharmacy"
+
+  astrazeneca:
+    name: "AstraZeneca"
+    tenant: "astrazeneca"
+    site_id: "AZ"
+    base_url: "https://astrazeneca.wd3.myworkdayjobs.com"
+    domain: "pharmacy"
+
+  sanofi:
+    name: "Sanofi"
+    tenant: "sanofi"
+    site_id: "SanofiJobs"
+    base_url: "https://sanofi.wd3.myworkdayjobs.com"
+    domain: "pharmacy"
+
+  abbott:
+    name: "Abbott"
+    tenant: "abbott"
+    site_id: "abbott"
+    base_url: "https://abbott.wd5.myworkdayjobs.com"
+    domain: "pharmacy"
+
+  roche:
+    name: "Roche"
+    tenant: "roche"
+    site_id: "roche"
+    base_url: "https://roche.wd3.myworkdayjobs.com"
+    domain: "pharmacy"
+
+  lilly:
+    name: "Eli Lilly"
+    tenant: "lilly"
+    site_id: "lilly"
+    base_url: "https://lilly.wd5.myworkdayjobs.com"
+    domain: "pharmacy"
+
+  gsk:
+    name: "GSK"
+    tenant: "gsk"
+    site_id: "GSK"
+    base_url: "https://gsk.wd3.myworkdayjobs.com"
+    domain: "pharmacy"

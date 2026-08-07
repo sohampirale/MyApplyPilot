@@ -307,8 +307,9 @@ def fetch_details(employer: dict, jobs: list[dict]) -> list[dict]:
 
 # -- DB storage --------------------------------------------------------------
 
-def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -> tuple[int, int]:
+def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict, domain: str = "engineering") -> tuple[int, int]:
     """Store corporate jobs in DB. Returns (new, existing)."""
+    from applypilot.database import parse_location
     now = datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
@@ -332,14 +333,19 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
 
         site = job.get("employer_name", "Corporate")
         strategy = "workday_api"
+        company = site
+        loc_raw = job.get("location")
+        city, state, country = parse_location(loc_raw)
 
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
-                "discovered_at, full_description, application_url, detail_scraped_at, detail_error) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, job.get("title"), None, short_desc, job.get("location"),
-                 site, strategy, now, full_description, url, detail_scraped_at, detail_error),
+                "discovered_at, full_description, application_url, detail_scraped_at, detail_error, "
+                "domain, company, city, state, country) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (url, job.get("title"), None, short_desc, loc_raw,
+                 site, strategy, now, full_description, url, detail_scraped_at, detail_error,
+                 domain, company, city, state, country),
             )
             new += 1
         except sqlite3.IntegrityError:
@@ -356,6 +362,7 @@ def _process_one(
     location_filter: bool,
     accept_locs: list[str],
     reject_locs: list[str],
+    domain: str = "engineering",
 ) -> dict:
     """Search one employer, fetch details, store results."""
     emp = employers[employer_key]
@@ -382,7 +389,7 @@ def _process_one(
         log.error("%s: ERROR fetching details for '%s': %s", emp["name"], search_text, e)
 
     conn = get_connection()
-    new, existing = store_results(conn, jobs, employers)
+    new, existing = store_results(conn, jobs, employers, domain=domain)
     log.info("%s: %d new, %d already in DB", emp["name"], new, existing)
 
     return {"employer": emp["name"], "query": search_text,
@@ -400,6 +407,7 @@ def scrape_employers(
     accept_locs: list[str] | None = None,
     reject_locs: list[str] | None = None,
     workers: int = 1,
+    domain: str = "engineering",
 ) -> dict:
     """Run full scrape: search -> filter -> detail -> store.
 
@@ -432,7 +440,7 @@ def scrape_employers(
             futures = {
                 pool.submit(
                     _process_one, key, employers, search_text,
-                    location_filter, accept_locs, reject_locs,
+                    location_filter, accept_locs, reject_locs, domain,
                 ): key
                 for key in valid_keys
             }
@@ -455,7 +463,7 @@ def scrape_employers(
         for key in valid_keys:
             result = _process_one(
                 key, employers, search_text,
-                location_filter, accept_locs, reject_locs,
+                location_filter, accept_locs, reject_locs, domain,
             )
             completed += 1
             total_new += result["new"]
@@ -503,6 +511,9 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
     queries_cfg = search_cfg.get("queries", [])
     accept_locs, reject_locs = _load_location_filter(search_cfg)
 
+    from applypilot.domains import get_domain_for_candidate, get_engine
+    domain_id = search_cfg.get("domain") or get_domain_for_candidate()
+
     # Default to tier 1-2 queries for workday scraping
     max_tier = search_cfg.get("workday_max_tier", 2)
     queries = [q["query"] for q in queries_cfg if q.get("tier", 99) <= max_tier]
@@ -510,6 +521,11 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
     if not queries:
         # Fallback: use all queries
         queries = [q["query"] for q in queries_cfg]
+
+    if domain_id == "pharmacy" and not queries:
+        engine = get_engine("pharmacy")
+        domain_cfg = engine.get_search_config()
+        queries = [q["query"] for q in domain_cfg["queries"]]
 
     if not queries:
         log.warning("No search queries configured in searches.yaml.")
@@ -521,7 +537,7 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
 
     location_filter = search_cfg.get("workday_location_filter", True)
 
-    log.info("Workday crawl: %d queries x %d employers (workers=%d)", len(queries), len(employers), workers)
+    log.info("Workday crawl: %d queries x %d employers (Domain: %s, workers=%d)", len(queries), len(employers), domain_id, workers)
 
     grand_new = 0
     grand_existing = 0
@@ -536,6 +552,7 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
             accept_locs=accept_locs,
             reject_locs=reject_locs,
             workers=workers,
+            domain=domain_id,
         )
         grand_new += result["new"]
         grand_existing += result["existing"]
