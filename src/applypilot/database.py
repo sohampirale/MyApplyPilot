@@ -249,6 +249,11 @@ _ALL_COLUMNS: dict[str, str] = {
     "apply_duration_ms": "INTEGER",
     "apply_task_id": "TEXT",
     "verification_confidence": "TEXT",
+    # Metadata & Geographic granularity
+    "company": "TEXT",
+    "city": "TEXT",
+    "state": "TEXT",
+    "country": "TEXT",
     # Domain isolation
     "domain": "TEXT DEFAULT 'engineering'",
 }
@@ -397,20 +402,50 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
     return stats
 
 
+def parse_location(location_str: str | None) -> tuple[str | None, str | None, str | None]:
+    """Parse raw location string into (city, state, country)."""
+    if not location_str or str(location_str).lower() in ("nan", "none", ""):
+        return None, None, None
+
+    parts = [p.strip() for p in str(location_str).split(",") if p.strip()]
+    if not parts:
+        return None, None, None
+
+    country = None
+    state = None
+    city = None
+
+    indian_states = {
+        "andhra pradesh", "arunachal pradesh", "assam", "bihar", "chhattisgarh",
+        "goa", "gujarat", "haryana", "himachal pradesh", "jharkhand", "karnataka",
+        "kerala", "madhya pradesh", "maharashtra", "manipur", "meghalaya", "mizoram",
+        "nagaland", "odisha", "punjab", "rajasthan", "sikkim", "tamil nadu",
+        "telangana", "tripura", "uttar pradesh", "uttarakhand", "west bengal",
+        "delhi", "ncr", "chandigarh"
+    }
+
+    if parts[-1].lower() in ("india", "in"):
+        country = "India"
+        parts.pop()
+
+    if parts:
+        last_lower = parts[-1].lower()
+        if last_lower in indian_states or any(st in last_lower for st in indian_states):
+            state = parts.pop()
+            if country is None:
+                country = "India"
+
+    if parts:
+        city = ", ".join(parts)
+    elif state and not city:
+        city = state
+
+    return city, state, country
+
+
 def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
                site: str, strategy: str, domain: str = "engineering") -> tuple[int, int]:
-    """Store discovered jobs, skipping duplicates by URL.
-
-    Args:
-        conn: Database connection.
-        jobs: List of job dicts with keys: url, title, salary, description, location.
-        site: Source site name (e.g. "RemoteOK", "Dice").
-        strategy: Extraction strategy used (e.g. "json_ld", "api_response", "css_selectors").
-        domain: Domain tag for this job pool (e.g. "engineering", "pharmacy").
-
-    Returns:
-        Tuple of (new_count, duplicate_count).
-    """
+    """Store discovered jobs, skipping duplicates by URL."""
     now = datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
@@ -419,12 +454,15 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
         url = job.get("url")
         if not url:
             continue
+        loc_raw = job.get("location")
+        city, state, country = parse_location(loc_raw)
+        company = job.get("company")
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, domain) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, domain, company, city, state, country) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, job.get("title"), job.get("salary"), job.get("description"),
-                 job.get("location"), site, strategy, now, domain),
+                 loc_raw, site, strategy, now, domain, company, city, state, country),
             )
             new += 1
         except sqlite3.IntegrityError:

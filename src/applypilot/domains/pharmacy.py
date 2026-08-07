@@ -40,8 +40,10 @@ class PharmacyEngine(BaseDomainEngine):
     ]
 
     default_locations = [
+        'India', 'Remote India',
         'Mumbai', 'Hyderabad', 'Pune', 'Bengaluru',
-        'Ahmedabad', 'Chennai', 'Vadodara',
+        'Ahmedabad', 'Vadodara', 'Ankleshwar', 'Vapi',
+        'Baddi', 'Solan', 'Visakhapatnam', 'Chennai', 'Goa', 'Indore',
     ]
 
     credential_fields = [

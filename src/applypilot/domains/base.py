@@ -16,7 +16,8 @@ class BaseDomainEngine:
         """Return search terms, locations, and domain ID for scrapers."""
         return {
             'search_terms': self.default_search_terms,
-            'locations': self.default_locations,
+            'queries': [{'query': term, 'tier': 1} for term in self.default_search_terms],
+            'locations': [{'location': loc, 'remote': ('remote' in loc.lower())} for loc in self.default_locations],
             'domain': self.domain_id,
         }
 

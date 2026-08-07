@@ -126,8 +126,9 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
 
 # -- DB storage (JobSpy DataFrame -> SQLite) ---------------------------------
 
-def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tuple[int, int]:
+def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str, domain: str = "engineering") -> tuple[int, int]:
     """Store JobSpy DataFrame results into the DB. Returns (new, existing)."""
+    from applypilot.database import parse_location
     now = datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
@@ -140,6 +141,7 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         title = str(row.get("title", "")) if str(row.get("title", "")) != "nan" else None
         company = str(row.get("company", "")) if str(row.get("company", "")) != "nan" else None
         location_str = str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None
+        city, state, country = parse_location(location_str)
 
         # Build salary string from min/max
         salary = None
@@ -178,10 +180,10 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, "
-                "full_description, application_url, detail_scraped_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "full_description, application_url, detail_scraped_at, domain, company, city, state, country) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, title, salary, description, location_str, site_label, strategy, now,
-                 full_description, apply_url, detail_scraped_at),
+                 full_description, apply_url, detail_scraped_at, domain, company, city, state, country),
             )
             new += 1
         except sqlite3.IntegrityError:
@@ -204,6 +206,7 @@ def _run_one_search(
     accept_locs: list[str],
     reject_locs: list[str],
     glassdoor_map: dict,
+    domain: str = "engineering",
 ) -> dict:
     """Run a single search query and store results in DB."""
     s = search
@@ -211,20 +214,16 @@ def _run_one_search(
     if "tier" in s:
         label += f" [tier {s['tier']}]"
 
-    # Split sites: Glassdoor needs simplified location, others use original
+    # Separate Glassdoor from other sites
+    has_glassdoor = "glassdoor" in [st.lower() for st in sites]
+    other_sites = [st for st in sites if st.lower() != "glassdoor"]
+
+    # Simple location string for Glassdoor
     gd_location = glassdoor_map.get(s["location"], s["location"].split(",")[0])
-    has_glassdoor = "glassdoor" in sites
-    other_sites = [si for si in sites if si != "glassdoor"]
 
     all_dfs = []
 
-    country_indeed = (
-        defaults.get("country_indeed")
-        or defaults.get("country")
-        or "india"
-    )
-
-    # Run non-Glassdoor sites with original location
+    # Run other sites together
     if other_sites:
         kwargs = {
             "site_name": other_sites,
@@ -233,7 +232,7 @@ def _run_one_search(
             "results_wanted": results_per_site,
             "hours_old": hours_old,
             "description_format": "markdown",
-            "country_indeed": country_indeed,
+            "country_indeed": defaults.get("country_indeed", "canada"),
             "verbose": 0,
         }
         if s.get("remote"):
@@ -306,7 +305,7 @@ def _run_one_search(
     filtered = before - len(df)
 
     conn = get_connection()
-    new, existing = store_jobspy_results(conn, df, s["query"])
+    new, existing = store_jobspy_results(conn, df, s["query"], domain=domain)
 
     msg = f"[{label}] {before} results -> {new} new, {existing} dupes"
     if filtered:
@@ -413,9 +412,23 @@ def _full_crawl(
     if sites is None:
         sites = search_cfg.get("boards") or search_cfg.get("sites") or ["naukri", "linkedin", "indeed", "glassdoor"]
 
+    # Determine active domain
+    from applypilot.domains import get_domain_for_candidate, get_engine
+    domain_id = search_cfg.get("domain") or get_domain_for_candidate()
+
     # Build search combinations from config
     queries = search_cfg.get("queries", [])
     locs = search_cfg.get("locations", [])
+
+    # If domain is pharmacy and search_cfg has no queries/locations, load from PharmacyEngine
+    if domain_id == "pharmacy" and (not queries or not locs):
+        engine = get_engine("pharmacy")
+        engine_cfg = engine.get_search_config()
+        if not queries:
+            queries = engine_cfg["queries"]
+        if not locs:
+            locs = engine_cfg["locations"]
+
     defaults = search_cfg.get("defaults", {})
     glassdoor_map = search_cfg.get("glassdoor_location_map", {})
     accept_locs, reject_locs = _load_location_config(search_cfg)
@@ -437,7 +450,7 @@ def _full_crawl(
 
     proxy_config = parse_proxy(proxy) if proxy else None
 
-    log.info("Full crawl: %d search combinations", len(searches))
+    log.info("Full crawl: %d search combinations (Domain: %s)", len(searches), domain_id)
     log.info("Sites: %s | Results/site: %d | Hours old: %d",
              ", ".join(sites), results_per_site, hours_old)
 
@@ -457,6 +470,7 @@ def _full_crawl(
             s, sites, results_per_site, hours_old,
             proxy_config, defaults, max_retries,
             accept_locs, reject_locs, glassdoor_map,
+            domain=domain_id,
         )
         completed += 1
         total_new += result.get("new", 0)
