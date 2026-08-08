@@ -1,6 +1,18 @@
-# AGENTS.md — Autonomous Agent Architecture in ApplyPilot
+# AGENTS.md — Autonomous Agent Architecture & AI Maintainer Instructions in ApplyPilot
 
-ApplyPilot is powered by a multi-agent autonomous system designed to handle job discovery, detail extraction, candidate-job fit scoring, resume tailoring, cover letter generation, and browser-driven application submission.
+> [!IMPORTANT]
+> **MANDATORY FOR ALL AI CODING AGENTS**:
+> Whenever an AI coding assistant modifies codebase features, database schemas, search terms, domain engines, CLI commands, or scrapers, it MUST update the relevant markdown files in `docs/` and `AGENTS.md` before concluding the task. Keep documentation 100% synchronized with the implementation.
+
+---
+
+## 📚 Project Documentation Sitemap (`docs/`)
+
+- [**Pharmacy Engine Overview**](file:///home/soham/coding/proj/MyApplyPilot/docs/pharmacy/OVERVIEW.md) — 51 pharmacy search terms, 16 Indian clusters, PCI credentials, and `is_pharmacy_title` domain auto-sanitization.
+- [**Pharmacy Employers & Targets**](file:///home/soham/coding/proj/MyApplyPilot/docs/pharmacy/EMPLOYERS_AND_TARGETS.md) — 13 Workday pharma MNCs and dedicated Indian pharma job portals.
+- [**Engineering Engine Overview**](file:///home/soham/coding/proj/MyApplyPilot/docs/engineering/OVERVIEW.md) — Software, DevOps, Data Science, and Tech role taxonomies.
+- [**Multi-Tenant Architecture**](file:///home/soham/coding/proj/MyApplyPilot/docs/architecture/MULTI_TENANT_DOMAINS.md) — Multi-student profile isolation, `candidate_scores` table, and CLI execution commands.
+- [**Scraping & Stealth Architecture**](file:///home/soham/coding/proj/MyApplyPilot/docs/architecture/SCRAPING_AND_STEALTH.md) — 3-stage discovery cascade, Chrome 122 stealth headers, and CapSolver solver hook.
 
 ---
 

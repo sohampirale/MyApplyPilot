@@ -69,6 +69,13 @@ Runs stages 1-5: discovers jobs, scores them, tailors your resume, generates cov
 
 Each stage is independent. For detailed multi-agent documentation, see [AGENTS.md](AGENTS.md).
 
+### 📚 Documentation Sitemap (`docs/`)
+- [**Pharmacy Engine & Taxonomy**](docs/pharmacy/OVERVIEW.md) — 51 search terms, 16 Indian clusters, PCI credentials, and `is_pharmacy_title` domain auto-sanitization.
+- [**Pharmacy Employers & Portals**](docs/pharmacy/EMPLOYERS_AND_TARGETS.md) — 13 Workday pharma MNCs and specialized Indian pharma job portals.
+- [**Engineering & Tech Engine**](docs/engineering/OVERVIEW.md) — Software, DevOps, Data Science, and Tech role taxonomies.
+- [**Multi-Tenant Architecture**](docs/architecture/MULTI_TENANT_DOMAINS.md) — Multi-student candidate data isolation, `candidate_scores` table, and CLI execution commands.
+- [**Scraping & Stealth Architecture**](docs/architecture/SCRAPING_AND_STEALTH.md) — 3-stage discovery cascade, Chrome 122 stealth headers, and CapSolver solver hook.
+
 ---
 
 ## ApplyPilot vs The Alternatives
