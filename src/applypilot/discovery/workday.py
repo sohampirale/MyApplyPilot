@@ -319,9 +319,7 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict, d
         if not url:
             emp = employers.get(job.get("employer_key", ""), {})
             if emp and job.get("external_path"):
-                url = f"{emp['base_url']}/en-US/{emp['site_id']}{job['external_path']}"
-        if url and "myworkdayjobs.com" in url and "/en-US/" not in url:
-            url = url.replace("myworkdayjobs.com/", "myworkdayjobs.com/en-US/")
+                url = f"{emp['base_url']}/{emp['site_id']}{job['external_path']}"
         if not url:
             continue
 
@@ -486,20 +484,8 @@ def scrape_employers(
 
 # -- Public entry point ------------------------------------------------------
 
-def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> dict:
-    """Main entry point for Workday-based corporate job discovery.
-
-    Loads employer registry from config/employers.yaml (or uses the provided
-    dict), then loads search queries from the user's search config to run
-    a full crawl across all employers.
-
-    Args:
-        employers: Override the employer registry. If None, loads from YAML.
-        workers: Number of parallel threads for employer scraping. Default 1 (sequential).
-
-    Returns:
-        Dict with stats: found, new, existing, queries.
-    """
+def run_workday_discovery(employers: dict | None = None, workers: int = 1, domain: str | None = None) -> dict:
+    """Main entry point for Workday-based corporate job discovery."""
     if employers is None:
         employers = load_employers()
 
@@ -512,7 +498,7 @@ def run_workday_discovery(employers: dict | None = None, workers: int = 1) -> di
     accept_locs, reject_locs = _load_location_filter(search_cfg)
 
     from applypilot.domains import get_domain_for_candidate, get_engine
-    domain_id = search_cfg.get("domain") or get_domain_for_candidate()
+    domain_id = domain or search_cfg.get("domain") or get_domain_for_candidate()
 
     # Filter employers by active candidate domain if specified
     if domain_id != "all":
