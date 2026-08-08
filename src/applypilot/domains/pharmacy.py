@@ -55,7 +55,7 @@ class PharmacyEngine(BaseDomainEngine):
     scoring_prompt_addendum = ''
 
 
-PHARMA_KEYWORDS = [
+EXPLICIT_PHARMA_KEYWORDS = [
     'pharmacist', 'pharmacy', 'pharma', 'quality control', 'qc ', 'qc analyst', 'qc officer', 'qc executive', 'qc chemist',
     'quality assurance', 'qa ', 'qa officer', 'qa executive', 'qa chemist', 'ipqa', 'gmp',
     'production officer', 'production executive', 'manufacturing officer', 'formulation', 'f&d', 'adl', 'analytical method',
@@ -72,13 +72,14 @@ NON_PHARMA_KEYWORDS = [
     'firmware', 'controls engineer', 'automation engineer', 'data engineer', 'it technologist', 'it commercial', 'it head',
     'hr ', 'human resources', 'accounts payable', 'auditor', 'audit manager', 'bankkaufmann', 'tender analyst',
     'scheduler', 'business partner', 'consulting', 'financial', 'finance', 'strategist', 'delegate coordinator', 'intern analyst',
-    'intercompany', 'electrician', 'apparel', 'food processing', 'construction phase', 'cad designer'
+    'intercompany', 'electrician', 'apparel', 'food processing', 'construction phase', 'cad designer', 'travel gear', 'procurement',
+    'telecalling', 'front office', 'delivery senior analyst', 'claims'
 ]
 
 
 def is_pharmacy_title(title: str) -> bool:
-    """Validate if a job title strictly belongs to Pharmacy & Lifesciences domain."""
+    """Strictly validate if a job title belongs to Pharmacy & Lifesciences domain."""
     t = (title or '').lower()
     if any(b in t for b in NON_PHARMA_KEYWORDS):
         return False
-    return any(w in t for w in PHARMA_KEYWORDS)
+    return any(w in t for w in EXPLICIT_PHARMA_KEYWORDS)

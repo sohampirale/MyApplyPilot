@@ -96,6 +96,33 @@ def _run_discover(workers: int = 1, domain: str | None = None) -> dict:
         console.print(f"  [red]Smart extract error:[/red] {e}")
         stats["smartextract"] = f"error: {e}"
 
+    # Automatic post-scrape cleanup sweep for pharmacy domain
+    try:
+        from applypilot.database import get_connection
+        from applypilot.domains.pharmacy import is_pharmacy_title
+        conn = get_connection()
+        rows = conn.execute("SELECT url, title FROM jobs WHERE domain = 'pharmacy'").fetchall()
+        deleted = 0
+        for url, title in rows:
+            if not is_pharmacy_title(title):
+                conn.execute("DELETE FROM jobs WHERE url = ?", (url,))
+                deleted += 1
+
+        dupe_deleted = conn.execute("""
+            DELETE FROM jobs
+            WHERE domain = 'pharmacy' AND rowid NOT IN (
+                SELECT MAX(rowid)
+                FROM jobs
+                WHERE domain = 'pharmacy'
+                GROUP BY title, COALESCE(company, site), COALESCE(location, '')
+            )
+        """).rowcount
+        conn.commit()
+        if deleted + dupe_deleted > 0:
+            log.info("Post-scrape cleanup: deleted %d non-pharma / duplicate jobs from pharmacy pool", deleted + dupe_deleted)
+    except Exception as e:
+        log.warning("Post-scrape cleanup sweep warning: %s", e)
+
     return stats
 
 

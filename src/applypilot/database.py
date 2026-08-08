@@ -459,12 +459,12 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
         company = job.get("company")
         title = job.get("title") or ""
 
-        # Auto-sanitize domain: reclassify non-pharma corporate/tech titles to engineering
+        # Auto-sanitize domain: drop non-pharma titles during pharmacy discovery
         job_domain = domain
         if job_domain == "pharmacy":
             from applypilot.domains.pharmacy import is_pharmacy_title
             if not is_pharmacy_title(title):
-                job_domain = "engineering"
+                continue  # Drop non-pharma job completely to prevent duplicates
 
         try:
             conn.execute(
