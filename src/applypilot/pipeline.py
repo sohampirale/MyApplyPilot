@@ -59,7 +59,7 @@ _UPSTREAM: dict[str, str | None] = {
 # Individual stage runners
 # ---------------------------------------------------------------------------
 
-def _run_discover(workers: int = 1) -> dict:
+def _run_discover(workers: int = 1, domain: str | None = None) -> dict:
     """Stage: Job discovery — JobSpy, Workday, and smart-extract scrapers."""
     stats: dict = {"jobspy": None, "workday": None, "smartextract": None}
 
@@ -67,7 +67,7 @@ def _run_discover(workers: int = 1) -> dict:
     console.print("  [cyan]JobSpy full crawl...[/cyan]")
     try:
         from applypilot.discovery.jobspy import run_discovery
-        run_discovery(workers=workers)
+        run_discovery(workers=workers, domain=domain)
         stats["jobspy"] = "ok"
     except Exception as e:
         log.error("JobSpy crawl failed: %s", e)
@@ -78,7 +78,7 @@ def _run_discover(workers: int = 1) -> dict:
     console.print("  [cyan]Workday corporate scraper...[/cyan]")
     try:
         from applypilot.discovery.workday import run_workday_discovery
-        run_workday_discovery(workers=workers)
+        run_workday_discovery(workers=workers, domain=domain)
         stats["workday"] = "ok"
     except Exception as e:
         log.error("Workday scraper failed: %s", e)
@@ -324,8 +324,8 @@ def _run_stage_streaming(
 # ---------------------------------------------------------------------------
 
 def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
-                    validation_mode: str = "normal") -> dict:
-    """Execute stages one at a time (original behavior)."""
+                    validation_mode: str = "normal", domain: str | None = None) -> dict:
+    """Execute stages one by one in canonical order."""
     results: list[dict] = []
     errors: dict[str, str] = {}
     pipeline_start = time.time()
@@ -347,6 +347,8 @@ def _run_sequential(ordered: list[str], min_score: int, workers: int = 1,
                 kwargs["validation_mode"] = validation_mode
             if name in ("discover", "enrich"):
                 kwargs["workers"] = workers
+            if name == "discover" and domain:
+                kwargs["domain"] = domain
             result = runner(**kwargs)
             elapsed = time.time() - t0
 
@@ -453,6 +455,7 @@ def run_pipeline(
     stream: bool = False,
     workers: int = 1,
     validation_mode: str = "normal",
+    domain: str | None = None,
 ) -> dict:
     """Run pipeline stages.
 
@@ -506,7 +509,7 @@ def run_pipeline(
                                 validation_mode=validation_mode)
     else:
         result = _run_sequential(ordered, min_score, workers=workers,
-                                 validation_mode=validation_mode)
+                                 validation_mode=validation_mode, domain=domain)
 
     # Summary table
     console.print(f"\n{'=' * 70}")

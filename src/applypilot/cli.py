@@ -98,13 +98,29 @@ def run(
             "lenient: banned words ignored, LLM judge skipped (fastest, fewest API calls)."
         ),
     ),
+    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Target domain override (e.g. pharmacy, engineering, mba, architecture)."),
 ) -> None:
     """Run pipeline stages: discover, enrich, score, tailor, cover, pdf."""
     _bootstrap()
 
     from applypilot.pipeline import run_pipeline
 
-    stage_list = stages if stages else ["all"]
+    raw_stages = stages if stages else ["all"]
+    stage_list = []
+    target_domain = domain
+
+    # Recognized domain IDs
+    known_domains = {"pharmacy", "engineering", "mba", "architecture"}
+
+    # Separate domain parameters from stage names (e.g., `applypilot run discover pharmacy`)
+    for s in raw_stages:
+        if s.lower() in known_domains:
+            target_domain = s.lower()
+        else:
+            stage_list.append(s)
+
+    if not stage_list:
+        stage_list = ["all"]
 
     # Validate stage names
     for s in stage_list:
@@ -137,6 +153,7 @@ def run(
         stream=stream,
         workers=workers,
         validation_mode=validation,
+        domain=target_domain,
     )
 
     if result.get("errors"):
