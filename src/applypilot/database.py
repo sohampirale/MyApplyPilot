@@ -459,16 +459,11 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
         company = job.get("company")
         title = job.get("title") or ""
 
-        # Auto-sanitize domain: reclassify tech/software titles to engineering
+        # Auto-sanitize domain: reclassify non-pharma corporate/tech titles to engineering
         job_domain = domain
         if job_domain == "pharmacy":
-            title_lower = title.lower()
-            tech_kw = [
-                "software", "devops", "developer", "architect", "full stack",
-                "frontend", "backend", ".net", "c#", "java ", "python ", "node.js",
-                "qa automation", "qa engineer", "test engineer", "application support engineer"
-            ]
-            if any(kw in title_lower for kw in tech_kw):
+            from applypilot.domains.pharmacy import is_pharmacy_title
+            if not is_pharmacy_title(title):
                 job_domain = "engineering"
 
         try:

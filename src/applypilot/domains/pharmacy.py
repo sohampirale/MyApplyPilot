@@ -53,3 +53,32 @@ class PharmacyEngine(BaseDomainEngine):
     ]
 
     scoring_prompt_addendum = ''
+
+
+PHARMA_KEYWORDS = [
+    'pharmacist', 'pharmacy', 'pharma', 'quality control', 'qc ', 'qc analyst', 'qc officer', 'qc executive', 'qc chemist',
+    'quality assurance', 'qa ', 'qa officer', 'qa executive', 'qa chemist', 'ipqa', 'gmp',
+    'production officer', 'production executive', 'manufacturing officer', 'formulation', 'f&d', 'adl', 'analytical method',
+    'regulatory affairs', 'ra officer', 'ra executive', 'ectd', 'dmf',
+    'clinical research', 'cra', 'clinical trial', 'clinical data', 'cdm',
+    'pharmacovigilance', 'pv officer', 'pv associate', 'drug safety',
+    'medical writer', 'scientific writer', 'medical representative', 'mr', 'pharma sales', 'medical science liaison', 'msl',
+    'nurse', 'nurse advisor', 'phlebotomy', 'haematology', 'oncology', 'chemist', 'microbiologist', 'toxicologist', 'biostatistician',
+    'medical coder', 'lab coordinator', 'laboratory', 'biomedical', 'pharmaberater', 'biochemist'
+]
+
+NON_PHARMA_KEYWORDS = [
+    'software', 'devops', 'developer', 'architect', 'full stack', 'frontend', 'backend', '.net', 'c#', 'java', 'python',
+    'firmware', 'controls engineer', 'automation engineer', 'data engineer', 'it technologist', 'it commercial', 'it head',
+    'hr ', 'human resources', 'accounts payable', 'auditor', 'audit manager', 'bankkaufmann', 'tender analyst',
+    'scheduler', 'business partner', 'consulting', 'financial', 'finance', 'strategist', 'delegate coordinator', 'intern analyst',
+    'intercompany', 'electrician'
+]
+
+
+def is_pharmacy_title(title: str) -> bool:
+    """Validate if a job title strictly belongs to Pharmacy & Lifesciences domain."""
+    t = (title or '').lower()
+    if any(b in t for b in NON_PHARMA_KEYWORDS):
+        return False
+    return any(w in t for w in PHARMA_KEYWORDS)
