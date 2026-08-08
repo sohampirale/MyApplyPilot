@@ -72,7 +72,7 @@ NON_PHARMA_KEYWORDS = [
     'firmware', 'controls engineer', 'automation engineer', 'data engineer', 'it technologist', 'it commercial', 'it head',
     'hr ', 'human resources', 'accounts payable', 'auditor', 'audit manager', 'bankkaufmann', 'tender analyst',
     'scheduler', 'business partner', 'consulting', 'financial', 'finance', 'strategist', 'delegate coordinator', 'intern analyst',
-    'intercompany', 'electrician'
+    'intercompany', 'electrician', 'apparel', 'food processing', 'construction phase', 'cad designer'
 ]
 
 
