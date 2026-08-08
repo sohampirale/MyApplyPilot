@@ -457,12 +457,26 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
         loc_raw = job.get("location")
         city, state, country = parse_location(loc_raw)
         company = job.get("company")
+        title = job.get("title") or ""
+
+        # Auto-sanitize domain: reclassify tech/software titles to engineering
+        job_domain = domain
+        if job_domain == "pharmacy":
+            title_lower = title.lower()
+            tech_kw = [
+                "software", "devops", "developer", "architect", "full stack",
+                "frontend", "backend", ".net", "c#", "java ", "python ", "node.js",
+                "qa automation", "qa engineer", "test engineer", "application support engineer"
+            ]
+            if any(kw in title_lower for kw in tech_kw):
+                job_domain = "engineering"
+
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, domain, company, city, state, country) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, job.get("title"), job.get("salary"), job.get("description"),
-                 loc_raw, site, strategy, now, domain, company, city, state, country),
+                (url, title, job.get("salary"), job.get("description"),
+                 loc_raw, site, strategy, now, job_domain, company, city, state, country),
             )
             new += 1
         except sqlite3.IntegrityError:
