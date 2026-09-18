@@ -1,130 +1,192 @@
-# ApplyPilot search configuration -- India Student & Entry-Level Default
-# Copy to ~/.applypilot/searches.yaml and customize for your job search.
-# The wizard (applypilot init) generates a basic version automatically.
+# ApplyPilot search configuration -- Maharashtra Tech Exhaustive Sweep
+# Discovers all tech, software, developer, data, AI, cloud, and engineering roles in Maharashtra.
 
-# Country for Indeed/LinkedIn/Glassdoor/Naukri searches
 country: "india"
 country_indeed: "india"
+domain: "engineering"
 
-# Search queries -- each has a query string and priority tier.
-# Tier 1: Student & Fresher High-Priority Roles
-# Tier 2: Core Engineering & Tech Roles
-# Tier 3: General & Off-Campus Roles
+# Search queries -- Comprehensive Tech Roles
 queries:
+  # Tier 1: Freshers, Trainees & Entry Level
   - query: "Software Engineer Intern"
     tier: 1
   - query: "Graduate Engineer Trainee"
     tier: 1
-  - query: "SDE 1"
-    tier: 1
-  - query: "Off Campus Software Engineer 2026"
-    tier: 1
   - query: "Associate Software Engineer"
     tier: 1
   - query: "Junior Software Engineer"
+    tier: 1
+  - query: "SDE 1"
+    tier: 1
+  - query: "Trainee Software Engineer"
+    tier: 1
+  - query: "Fresher Developer"
+    tier: 1
+  - query: "Off Campus Fresher"
+    tier: 1
+
+  # Tier 2: Core Software & Web Stacks
+  - query: "Software Engineer"
     tier: 2
-  - query: "Junior Backend Developer"
+  - query: "Software Developer"
     tier: 2
   - query: "Python Developer"
     tier: 2
-  - query: "Frontend Developer"
+  - query: "Java Developer"
     tier: 2
   - query: "Full Stack Developer"
     tier: 2
-  - query: "Data Engineer"
+  - query: "Frontend Developer"
     tier: 2
-  - query: "DevOps Engineer"
+  - query: "Backend Developer"
     tier: 2
-  - query: "Software Engineer"
+  - query: "React Developer"
+    tier: 2
+  - query: "Node.js Developer"
+    tier: 2
+  - query: ".NET Developer"
+    tier: 2
+  - query: "C++ Developer"
+    tier: 2
+  - query: "Web Developer"
+    tier: 2
+
+  # Tier 3: Pune/MH Specialty (Automotive, Embedded & Systems)
+  - query: "Embedded Software Engineer"
     tier: 3
-  - query: "Backend Engineer"
+  - query: "Firmware Engineer"
     tier: 3
-  - query: "QA Engineer"
+  - query: "IoT Engineer"
     tier: 3
-  - query: "AI / ML Engineer"
+  - query: "Systems Engineer"
+    tier: 3
+  - query: "Programmer Analyst"
     tier: 3
 
-# Locations to search across Indian Tech Hubs
+  # Tier 4: Data, AI, Cloud, DevOps & QA
+  - query: "Data Engineer"
+    tier: 4
+  - query: "Data Scientist"
+    tier: 4
+  - query: "Data Analyst"
+    tier: 4
+  - query: "AI Engineer"
+    tier: 4
+  - query: "Machine Learning Engineer"
+    tier: 4
+  - query: "DevOps Engineer"
+    tier: 4
+  - query: "Cloud Engineer"
+    tier: 4
+  - query: "QA Engineer"
+    tier: 4
+  - query: "SDET"
+    tier: 4
+
+# Locations across Maharashtra IT clusters + Remote
 locations:
-  - location: "Bengaluru, Karnataka"
-    remote: false
-  - location: "Hyderabad, Telangana"
-    remote: false
   - location: "Pune, Maharashtra"
-    remote: false
-  - location: "Gurugram, Haryana"
-    remote: false
-  - location: "Noida, Uttar Pradesh"
     remote: false
   - location: "Mumbai, Maharashtra"
     remote: false
-  - location: "Chennai, Tamil Nadu"
+  - location: "Navi Mumbai, Maharashtra"
+    remote: false
+  - location: "Thane, Maharashtra"
+    remote: false
+  - location: "Nagpur, Maharashtra"
+    remote: false
+  - location: "Nashik, Maharashtra"
+    remote: false
+  - location: "Aurangabad, Maharashtra"
+    remote: false
+  - location: "Kolhapur, Maharashtra"
+    remote: false
+  - location: "Pimpri-Chinchwad, Maharashtra"
+    remote: false
+  - location: "Maharashtra, India"
     remote: false
   - location: "Remote India"
     remote: true
 
 # Glassdoor location mappings
 glassdoor_location_map:
-  "Bengaluru, Karnataka": "Bengaluru"
-  "Hyderabad, Telangana": "Hyderabad"
   "Pune, Maharashtra": "Pune"
-  "Gurugram, Haryana": "Gurgaon"
-  "Noida, Uttar Pradesh": "Noida"
   "Mumbai, Maharashtra": "Mumbai"
-  "Chennai, Tamil Nadu": "Chennai"
+  "Navi Mumbai, Maharashtra": "Navi Mumbai"
+  "Thane, Maharashtra": "Thane"
+  "Nagpur, Maharashtra": "Nagpur"
+  "Nashik, Maharashtra": "Nashik"
+  "Aurangabad, Maharashtra": "Aurangabad"
+  "Kolhapur, Maharashtra": "Kolhapur"
+  "Pimpri-Chinchwad, Maharashtra": "Pune"
+  "Maharashtra, India": "Maharashtra"
   "Remote India": "India"
 
-# Location filtering -- accept/reject patterns for job location text
+# Location filtering -- strict accept for MH + Remote, reject non-remote outside MH
 location:
   accept_patterns:
+    - "Pune"
+    - "Mumbai"
+    - "Navi Mumbai"
+    - "Thane"
+    - "Nagpur"
+    - "Nashik"
+    - "Aurangabad"
+    - "Sambhajinagar"
+    - "Kolhapur"
+    - "Pimpri"
+    - "Chinchwad"
+    - "Hinjawadi"
+    - "Kharadi"
+    - "Magarpatta"
+    - "Baner"
+    - "Viman Nagar"
+    - "Airoli"
+    - "Mahape"
+    - "Vashi"
+    - "Powai"
+    - "Andheri"
+    - "BKC"
+    - "Goregaon"
+    - "Maharashtra"
+    - "MH"
+    - "Remote"
+    - "Work from home"
+    - "WFH"
+    - "Anywhere"
+  reject_patterns:
     - "Bengaluru"
     - "Bangalore"
     - "Hyderabad"
-    - "Pune"
     - "Gurugram"
     - "Gurgaon"
     - "Noida"
-    - "Mumbai"
-    - "Chennai"
     - "Delhi"
     - "NCR"
-    - "India"
-    - "Remote"
-    - "Anywhere"
-  reject_patterns:
+    - "Chennai"
+    - "Kolkata"
+    - "Ahmedabad"
     - "United States"
     - "US"
     - "USA"
     - "Canada"
-    - "London, UK"
     - "United Kingdom"
+    - "UK"
+    - "Germany"
+    - "Singapore"
     - "Europe"
 
-# JobSpy source boards (Naukri, LinkedIn, Indeed, Glassdoor, Google)
+# Job boards to query
 boards:
-  - naukri
   - linkedin
   - indeed
-  - glassdoor
-  - google
 
 # Search defaults
 defaults:
   country: "india"
   country_indeed: "india"
-  results_per_site: 100  # Max results per board per query
-  hours_old: 72          # Only jobs posted within this many hours
+  results_per_site: 100
+  hours_old: 720
 
-# Negative keywords -- skip jobs with these in the title (case-insensitive)
-exclude_titles:
-  - "senior director"
-  - "VP "
-  - "vice president"
-  - "chief"
-  - "principal engineer"
-  - "staff engineer"
-  - "lead engineer"
-  - "engineering manager"
-  - "clearance required"
-  - "TS/SCI"
-
+# Zero exclusions so we capture ALL tech jobs
+exclude_titles: []

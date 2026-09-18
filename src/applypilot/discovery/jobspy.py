@@ -549,7 +549,7 @@ def _full_crawl(
 
 # -- Public entry point ------------------------------------------------------
 
-def run_discovery(cfg: dict | None = None, workers: int = 1) -> dict:
+def run_discovery(cfg: dict | None = None, workers: int = 1, domain: str | None = None) -> dict:
     """Main entry point for JobSpy-based job discovery."""
     if cfg is None:
         cfg = config.load_search_config()
@@ -557,6 +557,9 @@ def run_discovery(cfg: dict | None = None, workers: int = 1) -> dict:
     if not cfg:
         log.warning("No search configuration found. Run `applypilot init` to create one.")
         return {"new": 0, "existing": 0, "errors": 0, "db_total": 0, "queries": 0}
+
+    if domain:
+        cfg["domain"] = domain
 
     proxy = cfg.get("proxy")
     sites = cfg.get("sites")

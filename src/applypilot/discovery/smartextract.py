@@ -1032,27 +1032,32 @@ def build_scrape_targets(
         site_name = site.get("name", "Unknown")
         site_type = site.get("type", "static")
 
+        # Extract top locations for multi-hub coverage if site supports location parameter
+        active_loc_list = [l if isinstance(l, str) else l["location"] for l in locs[:3]] if ("{location_encoded}" in site_url and locs) else [default_location]
+
         if site_type == "search" and queries:
             for query in queries:
+                for target_loc in active_loc_list:
+                    expanded_url = site_url
+                    expanded_url = expanded_url.replace("{query_encoded}", quote_plus(query))
+                    expanded_url = expanded_url.replace("{query}", quote_plus(query))
+                    expanded_url = expanded_url.replace("{location_encoded}", quote_plus(target_loc))
+                    targets.append({
+                        "name": f"{site_name} ({target_loc.split(',')[0]})" if len(active_loc_list) > 1 else site_name,
+                        "url": expanded_url,
+                        "query": query,
+                        "domain": domain_id,
+                    })
+        else:
+            for target_loc in active_loc_list:
                 expanded_url = site_url
-                expanded_url = expanded_url.replace("{query_encoded}", quote_plus(query))
-                expanded_url = expanded_url.replace("{query}", quote_plus(query))
-                expanded_url = expanded_url.replace("{location_encoded}", quote_plus(default_location))
+                expanded_url = expanded_url.replace("{location_encoded}", quote_plus(target_loc))
                 targets.append({
-                    "name": site_name,
+                    "name": f"{site_name} ({target_loc.split(',')[0]})" if len(active_loc_list) > 1 else site_name,
                     "url": expanded_url,
-                    "query": query,
+                    "query": None,
                     "domain": domain_id,
                 })
-        else:
-            expanded_url = site_url
-            expanded_url = expanded_url.replace("{location_encoded}", quote_plus(default_location))
-            targets.append({
-                "name": site_name,
-                "url": expanded_url,
-                "query": None,
-                "domain": domain_id,
-            })
 
     return targets
 

@@ -109,3 +109,23 @@ def apply_playwright_stealth(page) -> None:
         page.add_init_script(stealth_js)
     except Exception as e:
         log.debug("Failed to apply Playwright stealth script: %s", e)
+
+
+def launch_playwright_browser(playwright_instance, headless: bool = True):
+    """Launch Playwright Chromium with robust fallback to installed local binaries."""
+    try:
+        return playwright_instance.chromium.launch(headless=headless)
+    except Exception as e:
+        log.warning("Default Playwright launch failed (%s), attempting binary fallbacks...", e)
+        # Search for installed chrome binaries in ~/.cache/ms-playwright/
+        import glob
+        cache_dir = os.path.expanduser("~/.cache/ms-playwright")
+        chrome_bins = glob.glob(os.path.join(cache_dir, "chromium-*/chrome-linux64/chrome"))
+        chrome_bins += glob.glob(os.path.join(cache_dir, "chromium-*/chrome-linux/chrome"))
+        
+        for bin_path in chrome_bins:
+            if os.path.exists(bin_path):
+                log.info("Launching Playwright via binary: %s", bin_path)
+                return playwright_instance.chromium.launch(headless=headless, executable_path=bin_path)
+        
+        raise e

@@ -18,14 +18,24 @@ class EngineeringEngine(BaseDomainEngine):
     emoji = '💻'
 
     default_search_terms = [
-        'Software Engineer', 'Full Stack Developer', 'Backend Developer',
-        'AI Engineer', 'Machine Learning Engineer', 'Data Engineer',
-        'DevOps Engineer', 'Frontend Developer', 'Python Developer',
+        'Software Engineer', 'Software Developer', 'Full Stack Developer',
+        'Frontend Developer', 'Backend Developer', 'Python Developer',
+        'Java Developer', 'React Developer', 'Node.js Developer',
+        '.NET Developer', 'C++ Developer', 'Web Developer',
+        'Graduate Engineer Trainee', 'Associate Software Engineer', 'Junior Software Engineer',
+        'SDE 1', 'Software Engineer Intern', 'Fresher Developer',
+        'Embedded Software Engineer', 'Firmware Engineer', 'IoT Engineer',
+        'Systems Engineer', 'Programmer Analyst',
+        'Data Engineer', 'Data Scientist', 'Data Analyst',
+        'AI Engineer', 'Machine Learning Engineer',
+        'DevOps Engineer', 'Cloud Engineer', 'QA Engineer', 'SDET',
     ]
 
     default_locations = [
-        'Bengaluru', 'Hyderabad', 'Pune', 'Gurugram', 'Noida',
-        'Mumbai', 'Chennai', 'Remote',
+        'Pune, Maharashtra', 'Mumbai, Maharashtra', 'Navi Mumbai, Maharashtra',
+        'Thane, Maharashtra', 'Nagpur, Maharashtra', 'Nashik, Maharashtra',
+        'Aurangabad, Maharashtra', 'Kolhapur, Maharashtra', 'Pimpri-Chinchwad, Maharashtra',
+        'Maharashtra, India', 'Remote India',
     ]
 
     credential_fields = [
