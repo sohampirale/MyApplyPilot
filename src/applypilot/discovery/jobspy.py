@@ -90,48 +90,33 @@ def _scrape_with_retry(kwargs: dict, max_retries: int = 2, backoff: float = 3.0)
 # -- Location filtering ------------------------------------------------------
 
 def _load_location_config(search_cfg: dict) -> tuple[list[str], list[str]]:
-    """Extract accept/reject location lists from search config.
-
-    Falls back to sensible defaults if not defined in the YAML.
-    """
-    accept = search_cfg.get("location_accept", [])
-    reject = search_cfg.get("location_reject_non_remote", [])
+    """Extract accept/reject location lists from search config."""
+    loc_dict = search_cfg.get("location", {}) if isinstance(search_cfg.get("location"), dict) else {}
+    accept = search_cfg.get("location_accept") or loc_dict.get("accept_patterns") or []
+    reject = search_cfg.get("location_reject_non_remote") or loc_dict.get("reject_patterns") or []
     return accept, reject
 
 
 def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> bool:
-    """Check if a job location passes the user's location filter.
-
-    Remote jobs are always accepted. Non-remote jobs must match an accept
-    pattern and not match a reject pattern.
-    """
+    """Check if a job location passes the user's location filter."""
     if not location:
         return True  # unknown location -- keep it, let scorer decide
 
     loc = location.lower()
 
-    # Remote jobs always OK
-    if any(r in loc for r in ("remote", "anywhere", "work from home", "wfh", "distributed")):
-        return True
-
-    # Reject non-remote matches
+    # Reject non-target patterns first (e.g. US, UK, Bangalore)
     for r in reject:
         if r.lower() in loc:
             return False
 
-    # If no accept whitelist is configured, accept everything that
-    # wasn't rejected above. This prevents silently dropping ALL
-    # non-remote jobs when location_accept is empty/omitted.
-    if not accept:
-        return True
+    # Accept target locations or remote
+    if accept:
+        for a in accept:
+            if a.lower() in loc:
+                return True
+        return False
 
-    # Accept matches
-    for a in accept:
-        if a.lower() in loc:
-            return True
-
-    # No match -- reject unknown
-    return False
+    return True
 
 
 # -- DB storage (JobSpy DataFrame -> SQLite) ---------------------------------
