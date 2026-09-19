@@ -93,4 +93,21 @@ The second automated sweep across Maharashtra infrastructure corridors completed
   - Nashik: 47 jobs
   - Nagpur (Metro & Samruddhi): 43 jobs
 
+---
 
+## 📊 5. Baseline Discovery Results: Electrical, Electronics & Automation Engineering
+
+The third automated sweep across Maharashtra electrical, power, and automation hubs completed with **0 errors**:
+- **Total Verified Electrical Jobs**: **605** (stored under `domain = 'electrical'`, 0 AI scoring run).
+- **Source Breakdown**:
+  - **Naukri India Stealth**: 476 jobs (78.7%)
+  - **LinkedIn India**: 129 jobs (21.3%)
+- **Top Hiring Companies**:
+  - Jacobs (12), Vertiv Energy (10), Honeywell Technologies (10), Black & Veatch (7), Tata AutoComp (6), Schneider Electric (6), Hitachi Energy (6), Siemens (5), ABB (5), NXP Semiconductors (5), Neilsoft (4), Rhythmsoft Robotics Automation (4).
+- **Top Job Roles**:
+  - Electrical Engineer (82), Electrical Design Engineer (38), PLC Programmer (28), Substation Engineer (22), Switchgear Engineer (16), SCADA Engineer (15), Embedded Hardware Engineer (12), Graduate Engineer Trainee Electrical (18).
+- **Geographic Clusters**:
+  - Pune (Pune District, Ranjangaon Electronics Zone, Chakan, Hinjawadi): 140+ jobs
+  - Mumbai MMR (Mumbai, Navi Mumbai, Thane): 150+ jobs
+  - Nashik (Ambad MIDC electrical OEMs): 54 jobs
+  - Aurangabad (Chhatrapati Sambhajinagar): 12+ jobs

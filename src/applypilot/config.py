@@ -281,14 +281,10 @@ def ensure_dirs():
         d.mkdir(parents=True, exist_ok=True)
 
 
-def load_profile() -> dict:
-    """Load user profile from ~/.applypilot/profile.json."""
-    import json
-    if not PROFILE_PATH.exists():
-        raise FileNotFoundError(
-            f"Profile not found at {PROFILE_PATH}. Run `applypilot init` first."
-        )
-    return json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+def load_profile(candidate_id: str | None = None) -> dict:
+    """Load user profile for active (or specified) candidate."""
+    return load_candidate_profile(candidate_id)
+
 
 
 def load_search_config() -> dict:
