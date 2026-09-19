@@ -172,17 +172,22 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str, domain
         # Extract apply URL if JobSpy provided it
         apply_url = str(row.get("job_url_direct", "")) if str(row.get("job_url_direct", "")) != "nan" else None
 
+        # Extract date posted if JobSpy provided it
+        date_posted_val = row.get("date_posted")
+        date_posted = str(date_posted_val) if date_posted_val and str(date_posted_val) != "nan" else None
+
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, "
+                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, date_posted, "
                 "full_description, application_url, detail_scraped_at, domain, company, city, state, country) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, title, salary, description, location_str, site_label, strategy, now,
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (url, title, salary, description, location_str, site_label, strategy, now, date_posted,
                  full_description, apply_url, detail_scraped_at, domain, company, city, state, country),
             )
             new += 1
         except sqlite3.IntegrityError:
             existing += 1
+
 
     conn.commit()
     return new, existing
