@@ -111,3 +111,22 @@ The third automated sweep across Maharashtra electrical, power, and automation h
   - Mumbai MMR (Mumbai, Navi Mumbai, Thane): 150+ jobs
   - Nashik (Ambad MIDC electrical OEMs): 54 jobs
   - Aurangabad (Chhatrapati Sambhajinagar): 12+ jobs
+
+---
+
+## 📊 6. Baseline Discovery Results: Chemical & Process Engineering
+
+The fourth automated sweep across Maharashtra chemical, petrochem, and process corridors completed with **0 errors**:
+- **Total Verified Chemical Jobs**: **481** (stored under `domain = 'chemical'`, 0 AI scoring run).
+- **Source Breakdown**:
+  - **LinkedIn India**: 246 jobs (51.1%)
+  - **Naukri India Stealth**: 235 jobs (48.9%)
+- **Top Hiring Companies**:
+  - Reliance Industries Limited (5), Sun Pharma (6), Lupin (9), Galaxy Surfactants (4), Meril (4), Vertiv (7), Honeywell Technologies (4), Isgec Heavy Engineering (4), KP Group (4).
+- **Top Job Roles**:
+  - Chemical Process Engineer (54), Process Design Engineer (48), Plant Operations Engineer (36), Process Safety Engineer / HAZOP (28), Graduate Engineer Trainee Chemical (24), Water Treatment / ETP Engineer (16), Chemical Production Engineer (14).
+- **Geographic Clusters**:
+  - Mumbai Metropolitan Region (Mumbai, Navi Mumbai, Thane): 150+ jobs
+  - Pune Industrial Region (Kurkumbh MIDC, Chakan): 110+ jobs
+  - Tarapur & Boisar MIDC: Palghar specialty chemical corridor
+  - Nashik & Regional Chemical MIDCs (Roha, Mahad, Taloja, Patalganga): 50+ jobs
