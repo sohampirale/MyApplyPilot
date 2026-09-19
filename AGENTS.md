@@ -52,8 +52,8 @@ Uses headless Chromium (`sync_playwright`) to render JavaScript-heavy sites, cap
   - **Wellfound India**: `https://wellfound.com/role/l/software-engineer/india`
   - **Internshala Freshers**: `https://internshala.com`
 
-### 1.3 Workday API Agent (`workday.py`)
-Scrapes Workday CXS JSON endpoints directly across Global Capability Centers (GCCs) and IT MNCs operating in India (Amazon India, Walmart Global Tech India, Target India, Cisco India, Wipro, Cognizant, Capgemini India).
+### 1.4 Dedicated Naukri India Playwright Agent (`naukri.py`)
+Uses Playwright Chromium with Chrome 122 stealth headers to scrape and paginate high-volume core engineering and tech job vacancies directly from `https://www.naukri.com`, extracting direct salary (LPA), experience ranges, and skill tags without triggering Akamai bot blocks.
 
 ---
 
@@ -131,7 +131,11 @@ graph TD
 - **Candidate Scores Table (`candidate_scores`)**: Fit scores, AI reasoning, tailored resume paths, cover letters, and application statuses are stored per-candidate in SQL table `candidate_scores(candidate_id, job_url, fit_score, ...)`.
 
 ### 2. Domain Engines (`src/applypilot/domains/`)
-- **`EngineeringEngine`** (💻): Software, AI, Backend, DevOps, Data Science.
+- **`EngineeringEngine`** (💻): Software, AI, Backend, DevOps, Data Science, Cloud.
+- **`MechanicalEngine`** (⚙️): CAD/CAM, SolidWorks/CATIA, Automotive, Production, Maintenance, HVAC, EV Systems.
+- **`CivilEngine`** (🏗️): Site Engineering, Structural Design (STAAD.Pro, ETABS), Quantity Surveying, Billing, BIM (Revit).
+- **`ElectricalEngine`** (⚡): Power Systems, Substations, Switchgear, PLC/SCADA Automation, Embedded Hardware.
+- **`ChemicalEngine`** (🧪): Chemical Process Engineering, Plant Operations, Process Safety (HAZOP), Petrochem, Water Treatment.
 - **`PharmacyEngine`** (💊): Quality Assurance (QA), Quality Control (QC), Regulatory Affairs, Clinical Research, Pharmacist.
 - **`ArchitectureEngine`** (🏛️): Junior Architect, BIM Modeler, CAD Specialist, Urban Planner, Interior Design.
 - **`MBAEngine`** (📊): Business Analyst, Management Trainee, Product Manager, Strategy Analyst, Operations.

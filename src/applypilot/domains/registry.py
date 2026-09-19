@@ -71,6 +71,10 @@ def _ensure_loaded():
         return
     _loaded = True
     import applypilot.domains.engineering  # noqa: F401
+    import applypilot.domains.mechanical   # noqa: F401
+    import applypilot.domains.civil        # noqa: F401
+    import applypilot.domains.electrical   # noqa: F401
+    import applypilot.domains.chemical     # noqa: F401
     import applypilot.domains.pharmacy    # noqa: F401
     import applypilot.domains.architecture  # noqa: F401
     import applypilot.domains.mba         # noqa: F401

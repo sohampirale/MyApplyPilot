@@ -43,12 +43,16 @@ CREATE TABLE candidate_scores (
 ## 🏷️ 3. Domain Job Pool Isolation (`domain` Column in `jobs` Table)
 
 Discovered jobs are tagged with a `domain` column in SQLite:
+- `engineering` — Software, DevOps, Data Science, AI, and Cloud Tech Jobs
+- `mechanical` — Mechanical, Automotive, CAD/CAM, Production, and HVAC Jobs
+- `civil` — Civil Site Engineering, Structural Design, BIM, and Infrastructure Jobs
+- `electrical` — Power Systems, Substations, PLC/SCADA Automation, and Electronics Jobs
+- `chemical` — Chemical Process Engineering, Plant Operations, and Petrochemical Jobs
 - `pharmacy` — Pure Pharmacy & Lifesciences Jobs (validated by `is_pharmacy_title`)
-- `engineering` — Software, DevOps, Data Science, and Tech Jobs
-- `mba` — Business Analyst, Management Trainee, Product Manager
-- `architecture` — BIM Modeler, CAD Specialist, Urban Planner
+- `mba` — Business Analyst, Management Trainee, Product Manager, Operations
+- `architecture` — BIM Modeler, CAD Specialist, Urban Planner, Interior Design
 
-Pharmacy students do not see software engineering jobs in their raw pool, scored lists, or dashboard summary statistics.
+Students in any domain only see jobs relevant to their discipline in their raw pool, scored lists, or dashboard summary statistics.
 
 ---
 
