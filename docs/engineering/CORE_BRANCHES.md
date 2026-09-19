@@ -53,3 +53,24 @@ While tech startups hire on LinkedIn, **core engineering in India has 70%+ volum
 - **Module**: [`src/applypilot/discovery/naukri.py`](file:///home/soham/coding/proj/MyApplyPilot/src/applypilot/discovery/naukri.py)
 - **Stealth Architecture**: Chrome 122 user-agent and client hints, headless browser detection neutralization via `apply_playwright_stealth`.
 - **Field Extraction**: Extracts job title, company, location, experience range (e.g. `0 Yrs` for freshers), salary in LPA (e.g. `4.5 - 6.5 Lacs PA`), skills tags, and direct job URLs.
+
+---
+
+## 📊 3. Baseline Discovery Results: Mechanical & Automobile Engineering
+
+The first automated sweep across Maharashtra industrial hubs completed with **0 errors**:
+- **Total Verified Mechanical Jobs**: **972** (stored under `domain = 'mechanical'`, 0 AI scoring run).
+- **Source Breakdown**:
+  - **LinkedIn India**: 506 jobs (52.1%)
+  - **Naukri India Stealth**: 466 jobs (47.9%)
+- **Top Hiring Companies**:
+  - WSP in India (18), Vertiv (17), Eaton (15), Reliance Industries (14), Honeywell (12), Burns & McDonnell (11), Jacobs (10), Emerson (10), Capgemini Engineering (10), Valeo (9), Siemens (9).
+- **Top Job Roles**:
+  - Production Engineer (34), Mechanical Engineer (21), Mechanical Design Engineer (18), Design Engineer (17), CAD Engineer (9), Plant Maintenance Engineer (8), QC / Quality Inspector (16).
+- **Geographic Clusters**:
+  - Pune & Pimpri-Chinchwad (including Chakan, Bhosari, Talegaon): ~450+ jobs
+  - Mumbai MMR & Navi Mumbai: ~200+ jobs
+  - Nashik (Ambad/Satpur MIDC): 86 jobs
+  - Aurangabad (Waluj MIDC): Regional auto suppliers
+  - Kolhapur (Gokul Shirgaon): Foundries & fabrication units
+

@@ -34,14 +34,22 @@ VALID_STAGES = ("discover", "enrich", "score", "tailor", "cover", "pdf")
 # ---------------------------------------------------------------------------
 
 def _bootstrap() -> None:
-    """Common setup: load env, create dirs, init DB, migrate profile."""
-    from applypilot.config import load_env, ensure_dirs, migrate_legacy_profile
+    """Common setup: load env, create dirs, init DB, migrate profile, attach file logging."""
+    from applypilot.config import load_env, ensure_dirs, migrate_legacy_profile, LOG_DIR
     from applypilot.database import init_db
 
     load_env()
     ensure_dirs()
     init_db()
     migrate_legacy_profile()
+
+    # Ensure all CLI runs persist logs to ~/.applypilot/logs/applypilot.log
+    log_file = LOG_DIR / "applypilot.log"
+    root_logger = logging.getLogger()
+    if not any(isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", "") == str(log_file) for h in root_logger.handlers):
+        fh = logging.FileHandler(log_file, encoding="utf-8")
+        fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+        root_logger.addHandler(fh)
 
 
 def _version_callback(value: bool) -> None:
