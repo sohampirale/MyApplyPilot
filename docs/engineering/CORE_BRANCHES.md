@@ -74,3 +74,23 @@ The first automated sweep across Maharashtra industrial hubs completed with **0 
   - Aurangabad (Waluj MIDC): Regional auto suppliers
   - Kolhapur (Gokul Shirgaon): Foundries & fabrication units
 
+---
+
+## 📊 4. Baseline Discovery Results: Civil & Infrastructure Engineering
+
+The second automated sweep across Maharashtra infrastructure corridors completed with **0 errors**:
+- **Total Verified Civil Jobs**: **754** (stored under `domain = 'civil'`, 0 AI scoring run).
+- **Source Breakdown**:
+  - **Naukri India Stealth**: 467 jobs (61.9%)
+  - **LinkedIn India**: 287 jobs (38.1%)
+- **Top Hiring Companies**:
+  - WSP in India (27), Larsen & Toubro (15), Worley (9), Jacobs (9), AtkinsRéalis (9), Veradigm (7), Techture (7), SSOE Group (7), Vertiv (6).
+- **Top Job Roles**:
+  - Civil Engineer (60), Structural Design Engineer (23), Quantity Surveyor (19), Civil Site Engineer (16), Project Manager/Engineer (19), Site Supervisor/Engineer (18), Civil Billing Engineer (7), BIM Civil Engineer.
+- **Geographic Clusters**:
+  - Mumbai MMR (Mumbai, Navi Mumbai, Thane): ~350+ jobs (Coastal Road, Metro, redevelopment)
+  - Pune & PMRDA: ~200+ jobs
+  - Nashik: 47 jobs
+  - Nagpur (Metro & Samruddhi): 43 jobs
+
+
