@@ -331,18 +331,30 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict, d
         loc_raw = job.get("location")
         city, state, country = parse_location(loc_raw)
 
-        try:
-            conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
-                "discovered_at, full_description, application_url, detail_scraped_at, detail_error, "
-                "domain, company, city, state, country) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, job.get("title"), None, short_desc, loc_raw,
-                 site, strategy, now, full_description, url, detail_scraped_at, detail_error,
-                 domain, company, city, state, country),
-            )
+        from applypilot.discovery.classifier import classify_and_insert_job
+        inserted = classify_and_insert_job(
+            conn,
+            url=url,
+            title=job.get("title"),
+            company=company,
+            description=short_desc,
+            salary=None,
+            location=loc_raw,
+            city=city,
+            state=state,
+            country=country,
+            site=site,
+            strategy=strategy,
+            now=now,
+            full_description=full_description,
+            application_url=url,
+            detail_scraped_at=detail_scraped_at,
+            detail_error=detail_error,
+            domain=domain,
+        )
+        if inserted:
             new += 1
-        except sqlite3.IntegrityError:
+        else:
             existing += 1
 
     conn.commit()

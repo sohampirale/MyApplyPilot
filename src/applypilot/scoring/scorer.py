@@ -227,17 +227,24 @@ def run_scoring(limit: int = 0, rescore: bool = False,
     conn = get_connection()
 
     if rescore:
-        query = "SELECT * FROM jobs WHERE full_description IS NOT NULL AND domain = ?"
+        query = (
+            "SELECT * FROM jobs "
+            "WHERE full_description IS NOT NULL AND domain = ? "
+            "  AND COALESCE(is_canonical, 1) = 1 "
+            "  AND COALESCE(is_fresher_eligible, 1) = 1"
+        )
         params = [domain]
         if limit > 0:
             query += f" LIMIT {limit}"
         jobs = conn.execute(query, params).fetchall()
     else:
-        # Get jobs matching candidate domain not yet scored for THIS candidate
+        # Get canonical, fresher-eligible jobs matching candidate domain not yet scored for THIS candidate
         query = """
             SELECT j.* FROM jobs j
             WHERE j.full_description IS NOT NULL
               AND j.domain = ?
+              AND COALESCE(j.is_canonical, 1) = 1
+              AND COALESCE(j.is_fresher_eligible, 1) = 1
               AND j.url NOT IN (
                   SELECT job_url FROM candidate_scores WHERE candidate_id = ?
               )

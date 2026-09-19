@@ -680,11 +680,26 @@ def scrape_site_batch(
 
                 if status in ("ok", "partial"):
                     stats[status] += 1
-                    conn.execute(
-                        "UPDATE jobs SET full_description = ?, application_url = ?, "
-                        "detail_scraped_at = ?, detail_error = NULL WHERE url = ?",
-                        (result.get("full_description"), result.get("application_url"), now, url),
-                    )
+                    full_desc = result.get("full_description")
+                    job_row = conn.execute("SELECT title, company FROM jobs WHERE url = ?", (url,)).fetchone()
+                    if job_row and full_desc:
+                        from applypilot.discovery.classifier import classify_job
+                        c_res = classify_job(job_row[0], full_desc, job_row[1])
+                        conn.execute(
+                            "UPDATE jobs SET full_description = ?, application_url = ?, "
+                            "detail_scraped_at = ?, detail_error = NULL, "
+                            "experience_tier = ?, is_fresher_eligible = ?, min_experience_years = ?, classification_reason = ? "
+                            "WHERE url = ?",
+                            (full_desc, result.get("application_url"), now,
+                             c_res["experience_tier"], c_res["is_fresher_eligible"], c_res["min_experience_years"], c_res["classification_reason"],
+                             url),
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE jobs SET full_description = ?, application_url = ?, "
+                            "detail_scraped_at = ?, detail_error = NULL WHERE url = ?",
+                            (full_desc, result.get("application_url"), now, url),
+                        )
                 else:
                     stats["error"] += 1
                     conn.execute(

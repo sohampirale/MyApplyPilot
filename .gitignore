@@ -46,3 +46,6 @@ venv/
 .pytest_cache/
 
 resumes/
+*.png
+mastercard-job-page.md
+yt-results.yml

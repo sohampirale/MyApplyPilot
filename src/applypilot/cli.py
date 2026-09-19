@@ -293,7 +293,11 @@ def status() -> None:
     summary.add_column("Metric", style="bold")
     summary.add_column("Count", justify="right")
 
-    summary.add_row("Total jobs discovered", str(stats["total"]))
+    summary.add_row("Total job URLs in DB", str(stats["total"]))
+    summary.add_row("Unique canonical cards", str(stats.get("canonical_total", stats["total"])))
+    summary.add_row("Duplicate listings collapsed", str(stats.get("duplicates_collapsed", 0)))
+    summary.add_row("🎓 Fresher/Junior eligible", str(stats.get("fresher_eligible", 0)))
+    summary.add_row("🔴 Senior/Lead filtered", str(stats.get("senior_lead", 0)))
     summary.add_row("With full description", str(stats["with_description"]))
     summary.add_row("Pending enrichment", str(stats["pending_detail"]))
     summary.add_row("Enrichment errors", str(stats["detail_errors"]))

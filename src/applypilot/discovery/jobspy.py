@@ -124,6 +124,7 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
 def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str, domain: str = "engineering") -> tuple[int, int]:
     """Store JobSpy DataFrame results into the DB. Returns (new, existing)."""
     from applypilot.database import parse_location
+    from applypilot.discovery.classifier import classify_and_insert_job
     now = datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
@@ -176,16 +177,29 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str, domain
         date_posted_val = row.get("date_posted")
         date_posted = str(date_posted_val) if date_posted_val and str(date_posted_val) != "nan" else None
 
-        try:
-            conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, date_posted, "
-                "full_description, application_url, detail_scraped_at, domain, company, city, state, country) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, title, salary, description, location_str, site_label, strategy, now, date_posted,
-                 full_description, apply_url, detail_scraped_at, domain, company, city, state, country),
-            )
+        inserted = classify_and_insert_job(
+            conn,
+            url=url,
+            title=title,
+            company=company,
+            description=description,
+            salary=salary,
+            location=location_str,
+            city=city,
+            state=state,
+            country=country,
+            site=site_label,
+            strategy=strategy,
+            now=now,
+            date_posted=date_posted,
+            full_description=full_description,
+            application_url=apply_url,
+            detail_scraped_at=detail_scraped_at,
+            domain=domain,
+        )
+        if inserted:
             new += 1
-        except sqlite3.IntegrityError:
+        else:
             existing += 1
 
 

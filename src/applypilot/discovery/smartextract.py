@@ -116,15 +116,26 @@ def _store_jobs_filtered(
         loc_raw = job.get("location")
         city, state, country = parse_location(loc_raw)
         company = job.get("company")
-        try:
-            conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, domain, company, city, state, country) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, job.get("title"), job.get("salary"), job.get("description"),
-                 loc_raw, site, strategy, now, domain, company, city, state, country),
-            )
+        from applypilot.discovery.classifier import classify_and_insert_job
+        inserted = classify_and_insert_job(
+            conn,
+            url=url,
+            title=job.get("title"),
+            company=company,
+            description=job.get("description"),
+            salary=job.get("salary"),
+            location=loc_raw,
+            city=city,
+            state=state,
+            country=country,
+            site=site,
+            strategy=strategy,
+            now=now,
+            domain=domain,
+        )
+        if inserted:
             new += 1
-        except sqlite3.IntegrityError:
+        else:
             existing += 1
 
     if filtered:

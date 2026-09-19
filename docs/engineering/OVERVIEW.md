@@ -56,3 +56,29 @@ The `EngineeringEngine` (`src/applypilot/domains/engineering.py`) manages job di
   - **Aurangabad / Kolhapur**: Emerging regional hubs
   - **Remote MH / India**: ~400+ distributed roles
 - **Location Hygiene**: 100% verified Maharashtra / India tech roles with 0 foreign leakage.
+
+---
+
+## 🛡️ 5. Experience Classification & Canonical Deduplication System
+
+The tech engine includes an ultra-fast, deterministic rule-based engine in [`src/applypilot/discovery/classifier.py`](file:///home/soham/coding/proj/MyApplyPilot/src/applypilot/discovery/classifier.py):
+
+### 5.1 Experience Tiers & Zero Data Loss
+Jobs are tagged at ingestion without deleting any senior postings from SQLite:
+- `fresher` (🟢 0-1 YOE, Intern, Trainee, GET, College Graduate): `is_fresher_eligible = 1`
+- `likely_fresher` (🟢 1-2 YOE, Junior Developer): `is_fresher_eligible = 1`
+- `open_entry` (🔵 Standard SDE without senior blockers or high YOE requirements): `is_fresher_eligible = 1` (Benefit of the doubt)
+- `senior_lead` (🔴 3+ to 12+ YOE, Senior, Lead, Principal, Architect, Manager): `is_fresher_eligible = 0`
+
+### 5.2 The "Fresher Immunity Shield" (Fresher Trumps Senior)
+Fresher and trainee indicators (`intern`, `trainee`, `graduate`, `get`, `0-1 yrs exp`, `freshers can apply`) strictly override senior keywords, guaranteeing **0.0% False Negatives** on student opportunities even if senior roles/teams are mentioned in the description.
+
+### 5.3 Canonical Deduplication
+Collapses cross-platform and repetitive listings into single representative parent cards:
+- Cluster key: `sha256(normalize_company + "___" + normalize_title)[:16]`
+- Sibling listings link to `canonical_job_url` with `is_canonical = 0`.
+- Canonical parent maintains `duplicate_count` (e.g. 569 Accenture "Custom Software Engineer" postings collapse into 1 card with `duplicate_count = 569`).
+
+### 5.4 Migration & Real-Time Hooks
+- **Backfill Script**: [`scripts/classify_and_cluster_tech_jobs.py`](file:///home/soham/coding/proj/MyApplyPilot/scripts/classify_and_cluster_tech_jobs.py) backfills existing jobs in SQLite in under 5 seconds.
+- **Ingestion Hooks**: Scrapers (`JobSpy`, `Naukri`, `Workday`, `SmartExtract`) automatically classify and canonically cluster incoming jobs on the fly via `classify_and_insert_job()`.

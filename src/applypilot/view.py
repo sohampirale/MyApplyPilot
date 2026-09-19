@@ -321,20 +321,25 @@ def generate_dashboard(output_path: str | None = None,
     domain = get_domain_for_candidate(cid)
 
     # Stats — candidate and domain-specific from candidate_scores & jobs pool
-    total = conn.execute("SELECT COUNT(*) FROM jobs WHERE domain = ?", (domain,)).fetchone()[0]
+    raw_total = conn.execute("SELECT COUNT(*) FROM jobs WHERE domain = ?", (domain,)).fetchone()[0]
+    canonical_total = conn.execute("SELECT COUNT(*) FROM jobs WHERE domain = ? AND COALESCE(is_canonical, 1) = 1", (domain,)).fetchone()[0]
+    fresher_total = conn.execute("SELECT COUNT(*) FROM jobs WHERE domain = ? AND COALESCE(is_canonical, 1) = 1 AND COALESCE(is_fresher_eligible, 1) = 1", (domain,)).fetchone()[0]
+    collapsed_duplicates = raw_total - canonical_total
+    total = canonical_total
+
     ready = conn.execute(
         "SELECT COUNT(*) FROM jobs "
-        "WHERE full_description IS NOT NULL AND application_url IS NOT NULL AND domain = ?", (domain,)
+        "WHERE full_description IS NOT NULL AND application_url IS NOT NULL AND domain = ? AND COALESCE(is_canonical, 1) = 1", (domain,)
     ).fetchone()[0]
     scored = conn.execute(
         "SELECT COUNT(*) FROM candidate_scores cs "
         "JOIN jobs j ON j.url = cs.job_url "
-        "WHERE cs.candidate_id = ? AND j.domain = ?", (cid, domain)
+        "WHERE cs.candidate_id = ? AND j.domain = ? AND COALESCE(j.is_canonical, 1) = 1", (cid, domain)
     ).fetchone()[0]
     high_fit = conn.execute(
         "SELECT COUNT(*) FROM candidate_scores cs "
         "JOIN jobs j ON j.url = cs.job_url "
-        "WHERE cs.candidate_id = ? AND cs.fit_score >= 7 AND j.domain = ?", (cid, domain)
+        "WHERE cs.candidate_id = ? AND cs.fit_score >= 7 AND j.domain = ? AND COALESCE(j.is_canonical, 1) = 1", (cid, domain)
     ).fetchone()[0]
 
     unscored_count = max(0, total - scored)
@@ -366,15 +371,21 @@ def generate_dashboard(output_path: str | None = None,
         GROUP BY j.site ORDER BY high_fit DESC, total DESC
     """, (cid, domain)).fetchall()
 
-    # All jobs in candidate domain (both scored and newly discovered/unscored)
+    # All canonical jobs in candidate domain (both scored and newly discovered/unscored)
     jobs = conn.execute("""
         SELECT j.url, j.title, j.salary, j.description, j.location, j.site, j.strategy,
                j.full_description, j.application_url, j.detail_error,
                COALESCE(cs.fit_score, 0) as fit_score,
-               cs.score_reasoning, cs.tailored_resume_path
+               cs.score_reasoning, cs.tailored_resume_path,
+               COALESCE(j.is_canonical, 1) as is_canonical,
+               COALESCE(j.duplicate_count, 1) as duplicate_count,
+               COALESCE(j.is_fresher_eligible, 1) as is_fresher_eligible,
+               COALESCE(j.experience_tier, 'open_entry') as experience_tier,
+               j.cluster_id
         FROM jobs j
         LEFT JOIN candidate_scores cs ON cs.job_url = j.url AND cs.candidate_id = ?
         WHERE j.domain = ?
+          AND COALESCE(j.is_canonical, 1) = 1
         ORDER BY fit_score DESC, j.discovered_at DESC, j.title
     """, (cid, domain)).fetchall()
 
@@ -490,6 +501,20 @@ def generate_dashboard(output_path: str | None = None,
         meta_parts.append(
             f'<span class="meta-tag site-tag" style="background:{site_color}18;color:{site_color};border:1px solid {site_color}44">{site}</span>'
         )
+        dup_cnt = j["duplicate_count"] or 1
+        if dup_cnt > 1:
+            meta_parts.append(f'<span class="meta-tag" style="background:rgba(99,102,241,0.18);color:#a5b4fc;border:1px solid rgba(99,102,241,0.35);" title="{dup_cnt} duplicate postings collapsed into 1 primary card">📑 {dup_cnt} postings</span>')
+
+        exp_tier = j["experience_tier"] or "open_entry"
+        if exp_tier == "fresher":
+            meta_parts.append('<span class="meta-tag" style="background:rgba(16,185,129,0.18);color:#34d399;border:1px solid rgba(16,185,129,0.35);">🟢 Fresher/Intern</span>')
+        elif exp_tier == "likely_fresher":
+            meta_parts.append('<span class="meta-tag" style="background:rgba(52,211,153,0.18);color:#6ee7b7;border:1px solid rgba(52,211,153,0.35);">🟢 Junior (0-2 YOE)</span>')
+        elif exp_tier == "open_entry":
+            meta_parts.append('<span class="meta-tag" style="background:rgba(59,130,246,0.18);color:#60a5fa;border:1px solid rgba(59,130,246,0.35);">🔵 Open Entry SDE</span>')
+        elif exp_tier == "senior_lead":
+            meta_parts.append('<span class="meta-tag" style="background:rgba(239,68,68,0.18);color:#f87171;border:1px solid rgba(239,68,68,0.35);">🔴 Senior / Lead</span>')
+
         if score == 0:
             meta_parts.append('<span class="meta-tag" style="background:rgba(100,116,139,0.18);color:#94a3b8;border:1px solid rgba(100,116,139,0.35)">⚡ Newly Discovered (Raw)</span>')
         elif has_resume:
@@ -518,7 +543,7 @@ def generate_dashboard(output_path: str | None = None,
         card_id = f"job-card-{idx}"
 
         job_sections += f"""
-        <div class="job-card" id="{card_id}" data-score="{score}" data-site="{escape(j['site'] or '')}" data-location="{location.lower()}">
+        <div class="job-card" id="{card_id}" data-score="{score}" data-site="{escape(j['site'] or '')}" data-location="{location.lower()}" data-is-fresher="{j['is_fresher_eligible']}" data-tier="{exp_tier}">
           <div class="card-header">
             <span class="score-pill score-{score}" {"style='background:#475569'" if score == 0 else ""}>{"Raw" if score == 0 else score}</span>
             <a href="{url}" class="job-title" target="_blank" title="{title}">{title}</a>
@@ -1720,8 +1745,14 @@ def generate_dashboard(output_path: str | None = None,
   <!-- Summary Stats -->
   <div class="summary-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
     <div class="stat-card stat-total">
-      <div class="stat-top"><span class="stat-label">Total Jobs Discovered</span><span class="stat-icon">📊</span></div>
-      <div class="stat-num">{total}</div>
+      <div class="stat-top"><span class="stat-label">Unique Opportunities</span><span class="stat-icon">🎯</span></div>
+      <div class="stat-num">{canonical_total}</div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">{collapsed_duplicates} duplicate listings collapsed</div>
+    </div>
+    <div class="stat-card" style="border-left: 4px solid #10b981;">
+      <div class="stat-top"><span class="stat-label">🎓 Fresher / Junior</span><span class="stat-icon">🟢</span></div>
+      <div class="stat-num" style="color: #34d399;">{fresher_total}</div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem;">Zero senior clutter</div>
     </div>
     <div class="stat-card stat-unscored" style="border-left: 4px solid #64748b;">
       <div class="stat-top"><span class="stat-label">Newly Discovered (Raw)</span><span class="stat-icon">🆕</span></div>
@@ -1744,8 +1775,14 @@ def generate_dashboard(output_path: str | None = None,
   <!-- Filter Toolbar -->
   <div class="toolbar">
     <div class="filter-group">
+      <span class="filter-label">Experience Tier:</span>
+      <button class="filter-btn active" id="filter-fresher-btn" onclick="filterExperience('fresher')">🎓 Freshers &amp; Juniors ({fresher_total})</button>
+      <button class="filter-btn" id="filter-all-exp-btn" onclick="filterExperience('all')">🌐 All Experience ({canonical_total})</button>
+    </div>
+
+    <div class="filter-group">
       <span class="filter-label">View Pool:</span>
-      <button class="filter-btn active" onclick="filterScore(-2)">All Jobs ({total})</button>
+      <button class="filter-btn active" onclick="filterScore(-2)">All Cards</button>
       <button class="filter-btn" onclick="filterScore(-1)">🆕 Newly Discovered ({unscored_count})</button>
       <button class="filter-btn" onclick="filterScore(0)">All Scored ({scored})</button>
       <button class="filter-btn" onclick="filterScore(5)">5+ Moderate</button>
@@ -1965,16 +2002,27 @@ async function tailorAndApply(btn, jobUrl, applyUrl) {{
   }}
 }}
 
+let selectedExp = 'fresher';
+
+function filterExperience(exp) {{
+  selectedExp = exp;
+  document.getElementById('filter-fresher-btn')?.classList.toggle('active', exp === 'fresher');
+  document.getElementById('filter-all-exp-btn')?.classList.toggle('active', exp === 'all');
+  applyFilters();
+}}
+
 function filterScore(min) {{
   minScore = min;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+  const grp = event?.target?.closest('.filter-group');
+  if (grp) {{
+    grp.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+  }}
   applyFilters();
 }}
 
 function filterExactScore(score) {{
   minScore = score;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   applyFilters();
 }}
 
@@ -2035,8 +2083,9 @@ function applyFilters() {{
 
       const siteMatch = !selectedSite || cardSite === selectedSite;
       const textMatch = !searchText || text.includes(searchText);
+      const expMatch = (selectedExp === 'all') || (card.dataset.isFresher === "1");
 
-      if (scoreMatch && siteMatch && textMatch) {{
+      if (scoreMatch && siteMatch && textMatch && expMatch) {{
         gridMatching++;
         const isExpanded = expandedGrids.has(score) || Boolean(searchText) || Boolean(selectedSite);
         if (isExpanded || gridMatching <= limit) {{

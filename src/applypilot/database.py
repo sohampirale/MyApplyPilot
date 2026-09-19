@@ -134,13 +134,37 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             verification_confidence TEXT,
 
             -- Domain isolation
-            domain                TEXT DEFAULT 'engineering'
+            domain                TEXT DEFAULT 'engineering',
+
+            -- Experience classification & Fresher filtering
+            experience_tier       TEXT,
+            is_fresher_eligible   INTEGER DEFAULT 1,
+            min_experience_years  REAL,
+            classification_reason TEXT,
+
+            -- Canonical deduplication & clustering
+            cluster_id            TEXT,
+            is_canonical          INTEGER DEFAULT 1,
+            duplicate_count       INTEGER DEFAULT 1,
+            canonical_job_url     TEXT
         )
     """)
     conn.commit()
 
     # Run migrations for any columns added after initial schema
     ensure_columns(conn)
+
+    # ── Performance indexes for filtering & deduplication ───────────
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_jobs_fresher_cluster
+        ON jobs(domain, is_canonical, is_fresher_eligible)
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_jobs_cluster_id
+        ON jobs(cluster_id)
+    """)
+    conn.commit()
+
 
     # ── candidate_scores table (Multi-Student Isolation) ──────────────
     conn.execute("""
@@ -260,7 +284,18 @@ _ALL_COLUMNS: dict[str, str] = {
     "country": "TEXT",
     # Domain isolation
     "domain": "TEXT DEFAULT 'engineering'",
+    # Experience classification & Fresher filtering
+    "experience_tier": "TEXT",
+    "is_fresher_eligible": "INTEGER DEFAULT 1",
+    "min_experience_years": "REAL",
+    "classification_reason": "TEXT",
+    # Canonical deduplication & clustering
+    "cluster_id": "TEXT",
+    "is_canonical": "INTEGER DEFAULT 1",
+    "duplicate_count": "INTEGER DEFAULT 1",
+    "canonical_job_url": "TEXT",
 }
+
 
 
 def ensure_columns(conn: sqlite3.Connection | None = None) -> list[str]:
@@ -321,6 +356,10 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
 
     # Total jobs
     stats["total"] = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    stats["canonical_total"] = conn.execute("SELECT COUNT(*) FROM jobs WHERE COALESCE(is_canonical, 1) = 1").fetchone()[0]
+    stats["duplicates_collapsed"] = stats["total"] - stats["canonical_total"]
+    stats["fresher_eligible"] = conn.execute("SELECT COUNT(*) FROM jobs WHERE COALESCE(is_canonical, 1) = 1 AND COALESCE(is_fresher_eligible, 1) = 1").fetchone()[0]
+    stats["senior_lead"] = conn.execute("SELECT COUNT(*) FROM jobs WHERE COALESCE(is_canonical, 1) = 1 AND COALESCE(is_fresher_eligible, 1) = 0").fetchone()[0]
 
     # By site breakdown
     rows = conn.execute(
@@ -449,7 +488,9 @@ def parse_location(location_str: str | None) -> tuple[str | None, str | None, st
 
 def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
                site: str, strategy: str, domain: str = "engineering") -> tuple[int, int]:
-    """Store discovered jobs, skipping duplicates by URL."""
+    """Store discovered jobs, skipping duplicates by URL with real-time classification and canonical clustering."""
+    from applypilot.discovery.classifier import classify_and_insert_job
+
     now = datetime.now(timezone.utc).isoformat()
     new = 0
     existing = 0
@@ -470,15 +511,30 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             if not is_pharmacy_title(title):
                 continue  # Drop non-pharma job completely to prevent duplicates
 
-        try:
-            conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, domain, company, city, state, country) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, title, job.get("salary"), job.get("description"),
-                 loc_raw, site, strategy, now, job_domain, company, city, state, country),
-            )
+        inserted = classify_and_insert_job(
+            conn,
+            url=url,
+            title=title,
+            company=company,
+            description=job.get("description"),
+            salary=job.get("salary"),
+            location=loc_raw,
+            city=city,
+            state=state,
+            country=country,
+            site=site,
+            strategy=strategy,
+            now=now,
+            date_posted=job.get("date_posted"),
+            full_description=job.get("full_description"),
+            application_url=job.get("application_url"),
+            detail_scraped_at=job.get("detail_scraped_at"),
+            detail_error=job.get("detail_error"),
+            domain=job_domain,
+        )
+        if inserted:
             new += 1
-        except sqlite3.IntegrityError:
+        else:
             existing += 1
 
     conn.commit()
